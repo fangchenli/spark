@@ -25,8 +25,23 @@ import tempfile
 import time
 from subprocess import Popen, PIPE
 
-from py4j.java_gateway import java_import, JavaGateway, JavaObject, GatewayParameters
-from py4j.clientserver import ClientServer, JavaParameters, PythonParameters
+# Check if Gatun should be used instead of Py4J
+_USE_GATUN = os.environ.get("PYSPARK_USE_GATUN", "").lower() in ("true", "1", "yes")
+
+if _USE_GATUN:
+    from gatun.py4j_compat import (
+        java_import,
+        JavaGateway,
+        JavaObject,
+        GatewayParameters,
+        ClientServer,
+        JavaParameters,
+        PythonParameters,
+    )
+else:
+    from py4j.java_gateway import java_import, JavaGateway, JavaObject, GatewayParameters
+    from py4j.clientserver import ClientServer, JavaParameters, PythonParameters
+
 from pyspark.serializers import read_int, UTF8Deserializer
 
 from pyspark.find_spark_home import _find_spark_home
@@ -34,6 +49,57 @@ from pyspark.errors import PySparkRuntimeError
 
 # for backward compatibility references.
 from pyspark.util import local_connect_and_auth  # noqa: F401
+
+
+def _launch_gateway_gatun(conf=None, popen_kwargs=None):
+    """
+    Launch Gatun gateway (alternative to Py4J).
+
+    This uses Gatun's shared memory communication instead of Py4J's TCP sockets.
+    Note: This currently launches a separate JVM for Gatun, not the Spark JVM.
+    Full integration with Spark's JVM requires additional Scala-side changes.
+
+    Parameters
+    ----------
+    conf : :py:class:`pyspark.SparkConf`
+        spark configuration (currently ignored for Gatun)
+    popen_kwargs : dict
+        Not used for Gatun
+
+    Returns
+    -------
+    JavaGateway (Gatun-compatible)
+    """
+    from gatun import launch_gateway as gatun_launch, GatunClient
+
+    # Get memory size from config or environment
+    memory = os.environ.get("GATUN_MEMORY", "256MB")
+    socket_path = os.environ.get("GATUN_SOCKET_PATH")
+
+    # Launch Gatun server
+    session = gatun_launch(memory=memory, socket_path=socket_path)
+
+    # Create Gatun-compatible gateway
+    gateway = JavaGateway(
+        socket_path=session.socket_path,
+        start_server=False,  # Server already started
+    )
+
+    # Store session reference so it doesn't get GC'd
+    gateway._gatun_session = session
+    gateway.proc = None  # No subprocess to expose (Gatun manages internally)
+
+    # NOTE: We do NOT call java_import for Spark classes here because:
+    # 1. Gatun starts its own JVM which doesn't have Spark classes
+    # 2. The java_import calls would register wildcards that interfere with java.* lookups
+    # For full Spark integration, we'd need to:
+    # - Either have Gatun connect to Spark's JVM (requires Scala changes), or
+    # - Have Spark's JVM also run Gatun server (requires Scala changes)
+    #
+    # Current prototype: basic JVM operations work, but Spark-specific classes
+    # would require running Gatun server within Spark's JVM.
+
+    return gateway
 
 
 def launch_gateway(conf=None, popen_kwargs=None):
@@ -54,6 +120,10 @@ def launch_gateway(conf=None, popen_kwargs=None):
     -------
     ClientServer or JavaGateway
     """
+    # Use Gatun if enabled
+    if _USE_GATUN:
+        return _launch_gateway_gatun(conf, popen_kwargs)
+
     if "PYSPARK_GATEWAY_PORT" in os.environ:
         gateway_port = int(os.environ["PYSPARK_GATEWAY_PORT"])
         gateway_secret = os.environ["PYSPARK_GATEWAY_SECRET"]
