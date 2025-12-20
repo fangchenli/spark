@@ -51,13 +51,30 @@ from pyspark.errors import PySparkRuntimeError
 from pyspark.util import local_connect_and_auth  # noqa: F401
 
 
+def _get_spark_classpath():
+    """
+    Get the Spark classpath by running spark-submit --help and parsing output,
+    or by looking for JARs in SPARK_HOME.
+    """
+    import glob
+
+    SPARK_HOME = _find_spark_home()
+
+    # Collect all JARs from Spark's jars directory
+    jars_dir = os.path.join(SPARK_HOME, "jars")
+    if os.path.isdir(jars_dir):
+        jars = glob.glob(os.path.join(jars_dir, "*.jar"))
+        return jars
+
+    return []
+
+
 def _launch_gateway_gatun(conf=None, popen_kwargs=None):
     """
     Launch Gatun gateway (alternative to Py4J).
 
     This uses Gatun's shared memory communication instead of Py4J's TCP sockets.
-    Note: This currently launches a separate JVM for Gatun, not the Spark JVM.
-    Full integration with Spark's JVM requires additional Scala-side changes.
+    Spark JARs are added to the classpath so Spark classes are available.
 
     Parameters
     ----------
@@ -70,14 +87,21 @@ def _launch_gateway_gatun(conf=None, popen_kwargs=None):
     -------
     JavaGateway (Gatun-compatible)
     """
-    from gatun import launch_gateway as gatun_launch, GatunClient
+    from gatun import launch_gateway as gatun_launch
 
     # Get memory size from config or environment
     memory = os.environ.get("GATUN_MEMORY", "256MB")
     socket_path = os.environ.get("GATUN_SOCKET_PATH")
 
-    # Launch Gatun server
-    session = gatun_launch(memory=memory, socket_path=socket_path)
+    # Get Spark JARs for classpath
+    spark_classpath = _get_spark_classpath()
+
+    # Launch Gatun server with Spark JARs on classpath
+    session = gatun_launch(
+        memory=memory,
+        socket_path=socket_path,
+        classpath=spark_classpath,
+    )
 
     # Create Gatun-compatible gateway
     gateway = JavaGateway(
@@ -89,15 +113,20 @@ def _launch_gateway_gatun(conf=None, popen_kwargs=None):
     gateway._gatun_session = session
     gateway.proc = None  # No subprocess to expose (Gatun manages internally)
 
-    # NOTE: We do NOT call java_import for Spark classes here because:
-    # 1. Gatun starts its own JVM which doesn't have Spark classes
-    # 2. The java_import calls would register wildcards that interfere with java.* lookups
-    # For full Spark integration, we'd need to:
-    # - Either have Gatun connect to Spark's JVM (requires Scala changes), or
-    # - Have Spark's JVM also run Gatun server (requires Scala changes)
-    #
-    # Current prototype: basic JVM operations work, but Spark-specific classes
-    # would require running Gatun server within Spark's JVM.
+    # Import the classes used by PySpark
+    java_import(gateway.jvm, "org.apache.spark.SparkConf")
+    java_import(gateway.jvm, "org.apache.spark.api.java.*")
+    java_import(gateway.jvm, "org.apache.spark.api.python.*")
+    java_import(gateway.jvm, "org.apache.spark.ml.python.*")
+    java_import(gateway.jvm, "org.apache.spark.mllib.api.python.*")
+    java_import(gateway.jvm, "org.apache.spark.resource.*")
+    java_import(gateway.jvm, "org.apache.spark.sql.Encoders")
+    java_import(gateway.jvm, "org.apache.spark.sql.OnSuccessCall")
+    java_import(gateway.jvm, "org.apache.spark.sql.functions")
+    java_import(gateway.jvm, "org.apache.spark.sql.classic.*")
+    java_import(gateway.jvm, "org.apache.spark.sql.api.python.*")
+    java_import(gateway.jvm, "org.apache.spark.sql.hive.*")
+    java_import(gateway.jvm, "scala.Tuple2")
 
     return gateway
 
