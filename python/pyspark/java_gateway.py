@@ -53,17 +53,26 @@ from pyspark.util import local_connect_and_auth  # noqa: F401
 
 def _get_spark_classpath():
     """
-    Get the Spark classpath by running spark-submit --help and parsing output,
-    or by looking for JARs in SPARK_HOME.
+    Get the Spark classpath by looking for JARs in SPARK_HOME.
+
+    For pre-built distributions, JARs are in $SPARK_HOME/jars/.
+    For source builds, JARs are in $SPARK_HOME/assembly/target/scala-*/jars/.
     """
     import glob
 
     SPARK_HOME = _find_spark_home()
 
-    # Collect all JARs from Spark's jars directory
+    # First try pre-built distribution path
     jars_dir = os.path.join(SPARK_HOME, "jars")
     if os.path.isdir(jars_dir):
         jars = glob.glob(os.path.join(jars_dir, "*.jar"))
+        if jars:
+            return jars
+
+    # Fall back to source build path (assembly directory)
+    assembly_pattern = os.path.join(SPARK_HOME, "assembly", "target", "scala-*", "jars", "*.jar")
+    jars = glob.glob(assembly_pattern)
+    if jars:
         return jars
 
     return []
