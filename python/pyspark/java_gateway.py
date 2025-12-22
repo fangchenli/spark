@@ -137,6 +137,11 @@ def _launch_gateway_gatun(conf=None, popen_kwargs=None):
     java_import(gateway.jvm, "org.apache.spark.sql.hive.*")
     java_import(gateway.jvm, "scala.Tuple2")
 
+    # Set spark.master from MASTER env var if present (normally done by spark-submit)
+    master = os.environ.get("MASTER")
+    if master:
+        gateway.jvm.java.lang.System.setProperty("spark.master", master)
+
     return gateway
 
 
