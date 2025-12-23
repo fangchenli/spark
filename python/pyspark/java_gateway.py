@@ -57,8 +57,16 @@ def _get_spark_classpath():
 
     For pre-built distributions, JARs are in $SPARK_HOME/jars/.
     For source builds, JARs are in $SPARK_HOME/assembly/target/scala-*/jars/.
+
+    Note: Netty JARs are excluded because Gatun's fat JAR bundles its own
+    Netty version (for Arrow memory). Including Spark's Netty would cause
+    version conflicts.
     """
     import glob
+
+    def filter_netty(jars):
+        """Exclude Netty JARs to avoid version conflicts with Gatun's bundled Netty."""
+        return [j for j in jars if "/netty-" not in j and "\\netty-" not in j]
 
     SPARK_HOME = _find_spark_home()
 
@@ -67,13 +75,13 @@ def _get_spark_classpath():
     if os.path.isdir(jars_dir):
         jars = glob.glob(os.path.join(jars_dir, "*.jar"))
         if jars:
-            return jars
+            return filter_netty(jars)
 
     # Fall back to source build path (assembly directory)
     assembly_pattern = os.path.join(SPARK_HOME, "assembly", "target", "scala-*", "jars", "*.jar")
     jars = glob.glob(assembly_pattern)
     if jars:
-        return jars
+        return filter_netty(jars)
 
     return []
 
