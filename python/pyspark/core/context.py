@@ -197,7 +197,10 @@ class SparkContext:
             SparkContext._assert_on_driver()
 
         self._callsite = first_spark_call() or CallSite(None, None, None)
-        if gateway is not None and gateway.gateway_parameters.auth_token is None:
+        # Skip auth check for Gatun - it uses Unix domain sockets which are inherently secure
+        # (no network exposure). Gatun always has auth_token=None since it doesn't need TCP auth.
+        _use_gatun = os.environ.get("PYSPARK_USE_GATUN", "").lower() in ("true", "1", "yes")
+        if gateway is not None and not _use_gatun and gateway.gateway_parameters.auth_token is None:
             raise ValueError(
                 "You are trying to pass an insecure Py4j gateway to Spark. This"
                 " is not allowed as it is a security risk."
@@ -306,8 +309,13 @@ class SparkContext:
         # they will be passed back to us through a TCP server
         assert self._gateway is not None
         auth_token = self._gateway.gateway_parameters.auth_token
+
+        # When using Gatun, force Unix domain socket mode for accumulator server
+        # since Gatun doesn't have auth_token (uses Unix sockets instead of TCP)
+        _use_gatun = os.environ.get("PYSPARK_USE_GATUN", "").lower() in ("true", "1", "yes")
         is_unix_domain_sock = (
-            self._conf.get(
+            _use_gatun
+            or self._conf.get(
                 "spark.python.unix.domain.socket.enabled",
                 os.environ.get("PYSPARK_UDS_MODE", "false"),
             ).lower()

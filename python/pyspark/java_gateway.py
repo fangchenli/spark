@@ -26,18 +26,27 @@ import time
 from subprocess import Popen, PIPE
 
 # Check if Gatun should be used instead of Py4J
+# Note: Workers may have PYSPARK_USE_GATUN=true but gatun not installed.
+# They don't need Gatun since workers communicate via pipes, not the gateway.
 _USE_GATUN = os.environ.get("PYSPARK_USE_GATUN", "").lower() in ("true", "1", "yes")
 
 if _USE_GATUN:
-    from gatun.py4j_compat import (
-        java_import,
-        JavaGateway,
-        JavaObject,
-        GatewayParameters,
-        ClientServer,
-        JavaParameters,
-        PythonParameters,
-    )
+    try:
+        from gatun.py4j_compat import (
+            java_import,
+            JavaGateway,
+            JavaObject,
+            GatewayParameters,
+            ClientServer,
+            JavaParameters,
+            PythonParameters,
+        )
+    except ImportError:
+        # Gatun not installed (e.g., in worker process) - fall back to Py4J types
+        # Workers don't actually use the gateway, so this is fine
+        _USE_GATUN = False
+        from py4j.java_gateway import java_import, JavaGateway, JavaObject, GatewayParameters
+        from py4j.clientserver import ClientServer, JavaParameters, PythonParameters
 else:
     from py4j.java_gateway import java_import, JavaGateway, JavaObject, GatewayParameters
     from py4j.clientserver import ClientServer, JavaParameters, PythonParameters
@@ -57,16 +66,8 @@ def _get_spark_classpath():
 
     For pre-built distributions, JARs are in $SPARK_HOME/jars/.
     For source builds, JARs are in $SPARK_HOME/assembly/target/scala-*/jars/.
-
-    Note: Netty JARs are excluded because Gatun's fat JAR bundles its own
-    Netty version (for Arrow memory). Including Spark's Netty would cause
-    version conflicts.
     """
     import glob
-
-    def filter_netty(jars):
-        """Exclude Netty JARs to avoid version conflicts with Gatun's bundled Netty."""
-        return [j for j in jars if "/netty-" not in j and "\\netty-" not in j]
 
     SPARK_HOME = _find_spark_home()
 
@@ -75,13 +76,13 @@ def _get_spark_classpath():
     if os.path.isdir(jars_dir):
         jars = glob.glob(os.path.join(jars_dir, "*.jar"))
         if jars:
-            return filter_netty(jars)
+            return jars
 
     # Fall back to source build path (assembly directory)
     assembly_pattern = os.path.join(SPARK_HOME, "assembly", "target", "scala-*", "jars", "*.jar")
     jars = glob.glob(assembly_pattern)
     if jars:
-        return filter_netty(jars)
+        return jars
 
     return []
 
@@ -131,9 +132,17 @@ def _launch_gateway_gatun(conf=None, popen_kwargs=None):
     gateway.proc = None  # No subprocess to expose (Gatun manages internally)
 
     # Import the classes used by PySpark
+    # Note: Use specific imports for classes that exist in multiple packages
+    # to avoid ambiguity with wildcard resolution
     java_import(gateway.jvm, "org.apache.spark.SparkConf")
-    java_import(gateway.jvm, "org.apache.spark.api.java.*")
+    # Specific imports for api.java classes
+    java_import(gateway.jvm, "org.apache.spark.api.java.JavaSparkContext")
+    java_import(gateway.jvm, "org.apache.spark.api.java.JavaRDD")
+    java_import(gateway.jvm, "org.apache.spark.api.java.JavaPairRDD")
+    # Wildcard import for api.python - must come before ml.python to resolve conflicts
+    # Classes like SimplePythonFunction, PairwiseRDD, PythonRDD are in api.python
     java_import(gateway.jvm, "org.apache.spark.api.python.*")
+    # General wildcard imports for less conflicting packages
     java_import(gateway.jvm, "org.apache.spark.ml.python.*")
     java_import(gateway.jvm, "org.apache.spark.mllib.api.python.*")
     java_import(gateway.jvm, "org.apache.spark.resource.*")
