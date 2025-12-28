@@ -308,12 +308,8 @@ class SparkContext:
         assert self._gateway is not None
         auth_token = self._gateway.gateway_parameters.auth_token
 
-        # When using Gatun, force Unix domain socket mode for accumulator server
-        # since Gatun doesn't have auth_token (uses Unix sockets instead of TCP)
-        _use_gatun = os.environ.get("PYSPARK_USE_GATUN", "").lower() in ("true", "1", "yes")
         is_unix_domain_sock = (
-            _use_gatun
-            or self._conf.get(
+            self._conf.get(
                 "spark.python.unix.domain.socket.enabled",
                 os.environ.get("PYSPARK_UDS_MODE", "false"),
             ).lower()
