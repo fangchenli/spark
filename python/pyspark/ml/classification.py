@@ -3812,16 +3812,12 @@ class OneVsRestModel(
         if is_remote() or not isinstance(models[0], JavaMLWritable):
             return
 
-        from pyspark.core.context import SparkContext
-
         # set java instance
         java_models = [cast(_JavaClassificationModel, model)._to_java() for model in self.models]
-        sc = SparkContext._active_spark_context
-        assert sc is not None and sc._gateway is not None
 
         java_models_array = JavaWrapper._new_java_array(
             java_models,
-            getattr(sc._gateway.jvm, "org.apache.spark.ml.classification.ClassificationModel"),
+            "org.apache.spark.ml.classification.ClassificationModel",
         )
         # TODO: need to set metadata
         metadata = JavaParams._new_java_obj("org.apache.spark.sql.types.Metadata")
@@ -3936,13 +3932,10 @@ class OneVsRestModel(
         """
         from pyspark.core.context import SparkContext
 
-        sc = SparkContext._active_spark_context
-        assert sc is not None and sc._gateway is not None
-
         java_models = [cast(_JavaClassificationModel, model)._to_java() for model in self.models]
         java_models_array = JavaWrapper._new_java_array(
             java_models,
-            getattr(sc._gateway.jvm, "org.apache.spark.ml.classification.ClassificationModel"),
+            "org.apache.spark.ml.classification.ClassificationModel",
         )
         metadata = JavaParams._new_java_obj("org.apache.spark.sql.types.Metadata")
         _java_obj = JavaParams._new_java_obj(

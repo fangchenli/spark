@@ -84,34 +84,30 @@ class WrapperTests(MLlibTestCase):
     def test_new_java_array(self):
         # test array of strings
         str_list = ["a", "b", "c"]
-        java_class = self.sc._gateway.jvm.java.lang.String
-        java_array = JavaWrapper._new_java_array(str_list, java_class)
+        java_array = JavaWrapper._new_java_array(str_list, "java.lang.String")
         self.assertEqual(_java2py(self.sc, java_array), str_list)
         # test array of integers
         int_list = [1, 2, 3]
-        java_class = self.sc._gateway.jvm.java.lang.Integer
-        java_array = JavaWrapper._new_java_array(int_list, java_class)
+        java_array = JavaWrapper._new_java_array(int_list, "java.lang.Integer")
         self.assertEqual(_java2py(self.sc, java_array), int_list)
         # test array of floats
         float_list = [0.1, 0.2, 0.3]
-        java_class = self.sc._gateway.jvm.java.lang.Double
-        java_array = JavaWrapper._new_java_array(float_list, java_class)
+        java_array = JavaWrapper._new_java_array(float_list, "java.lang.Double")
         self.assertEqual(_java2py(self.sc, java_array), float_list)
         # test array of bools
         bool_list = [False, True, True]
-        java_class = self.sc._gateway.jvm.java.lang.Boolean
-        java_array = JavaWrapper._new_java_array(bool_list, java_class)
+        java_array = JavaWrapper._new_java_array(bool_list, "java.lang.Boolean")
         self.assertEqual(_java2py(self.sc, java_array), bool_list)
         # test array of Java DenseVectors
         v1 = DenseVector([0.0, 1.0])
         v2 = DenseVector([1.0, 0.0])
         vec_java_list = [_py2java(self.sc, v1), _py2java(self.sc, v2)]
-        java_class = self.sc._gateway.jvm.org.apache.spark.ml.linalg.DenseVector
-        java_array = JavaWrapper._new_java_array(vec_java_list, java_class)
+        java_array = JavaWrapper._new_java_array(
+            vec_java_list, "org.apache.spark.ml.linalg.DenseVector"
+        )
         self.assertEqual(_java2py(self.sc, java_array), [v1, v2])
         # test empty array
-        java_class = self.sc._gateway.jvm.java.lang.Integer
-        java_array = JavaWrapper._new_java_array([], java_class)
+        java_array = JavaWrapper._new_java_array([], "java.lang.Integer")
         self.assertEqual(_java2py(self.sc, java_array), [])
         # test array of array of strings
         str_list = [["a", "b", "c"], ["d", "e"], ["f", "g", "h", "i"], []]
@@ -121,8 +117,7 @@ class WrapperTests(MLlibTestCase):
             ("f", "g", "h", "i"),
             (None, None, None, None),
         ]
-        java_class = self.sc._gateway.jvm.java.lang.String
-        java_array = JavaWrapper._new_java_array(str_list, java_class)
+        java_array = JavaWrapper._new_java_array(str_list, "java.lang.String")
         self.assertEqual(_java2py(self.sc, java_array), expected_str_list)
 
 

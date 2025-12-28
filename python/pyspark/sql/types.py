@@ -3791,28 +3791,26 @@ class NumpyScalarConverter:
 
 
 class NumpyArrayConverter:
-    def _from_numpy_type_to_java_type(
-        self, nt: "np.dtype", gateway: "JavaGateway"
-    ) -> Optional["JavaClass"]:
-        """Convert NumPy type to Py4J Java type."""
+    def _from_numpy_type_to_java_type(self, nt: "np.dtype") -> Optional[str]:
+        """Convert NumPy type to Java type name string."""
         import numpy as np
 
         if nt in [np.dtype("int8"), np.dtype("int16")]:
-            # Mapping int8 to gateway.jvm.byte causes
+            # Mapping int8 to byte causes
             #   TypeError: 'bytes' object does not support item assignment
-            return gateway.jvm.short
+            return "short"
         elif nt == np.dtype("int32"):
-            return gateway.jvm.int
+            return "int"
         elif nt == np.dtype("int64"):
-            return gateway.jvm.long
+            return "long"
         elif nt == np.dtype("float32"):
-            return gateway.jvm.float
+            return "float"
         elif nt == np.dtype("float64"):
-            return gateway.jvm.double
+            return "double"
         elif nt == np.dtype("bool"):
-            return gateway.jvm.boolean
+            return "boolean"
         elif nt.type == np.dtype("str"):
-            return gateway.jvm.String
+            return "java.lang.String"
 
         return None
 
@@ -3826,21 +3824,20 @@ class NumpyArrayConverter:
         return False
 
     def convert(self, obj: "np.ndarray", gateway_client: "GatewayClient") -> "JavaGateway":
-        from pyspark import SparkContext
+        from pyspark.jvm_bridge import get_bridge
 
-        gateway = SparkContext._gateway
-        assert gateway is not None
         plist = obj.tolist()
 
-        jtpe = self._from_numpy_type_to_java_type(obj.dtype, gateway)
+        jtpe = self._from_numpy_type_to_java_type(obj.dtype)
         if jtpe is None:
             raise PySparkTypeError(
                 errorClass="UNSUPPORTED_NUMPY_ARRAY_SCALAR",
                 messageParameters={"dtype": str(obj.dtype)},
             )
-        jarr = gateway.new_array(jtpe, len(obj))
+        bridge = get_bridge()
+        jarr = bridge.new_array(jtpe, len(obj))
         for i in range(len(plist)):
-            jarr[i] = plist[i]
+            bridge.array_set(jarr, i, plist[i])
         return jarr
 
 

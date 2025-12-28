@@ -205,14 +205,16 @@ class Pipeline(Estimator["PipelineModel"], MLReadable["Pipeline"], MLWritable):
             Java object equivalent to this instance.
         """
         from pyspark.core.context import SparkContext
+        from pyspark.jvm_bridge import get_bridge
 
-        gateway = SparkContext._gateway
-        assert gateway is not None and SparkContext._jvm is not None
+        assert SparkContext._jvm is not None
+        bridge = get_bridge()
 
-        cls = getattr(SparkContext._jvm, "org.apache.spark.ml.PipelineStage")
-        java_stages = gateway.new_array(cls, len(self.getStages()))
+        java_stages = bridge.new_array(
+            "org.apache.spark.ml.PipelineStage", len(self.getStages())
+        )
         for idx, stage in enumerate(self.getStages()):
-            java_stages[idx] = cast(JavaParams, stage)._to_java()
+            bridge.array_set(java_stages, idx, cast(JavaParams, stage)._to_java())
 
         _java_obj = JavaParams._new_java_obj("org.apache.spark.ml.Pipeline", self.uid)
         _java_obj.setStages(java_stages)
@@ -355,14 +357,14 @@ class PipelineModel(Model, MLReadable["PipelineModel"], MLWritable):
         :return: Java object equivalent to this instance.
         """
         from pyspark.core.context import SparkContext
+        from pyspark.jvm_bridge import get_bridge
 
-        gateway = SparkContext._gateway
-        assert gateway is not None and SparkContext._jvm is not None
+        assert SparkContext._jvm is not None
+        bridge = get_bridge()
 
-        cls = getattr(SparkContext._jvm, "org.apache.spark.ml.Transformer")
-        java_stages = gateway.new_array(cls, len(self.stages))
+        java_stages = bridge.new_array("org.apache.spark.ml.Transformer", len(self.stages))
         for idx, stage in enumerate(self.stages):
-            java_stages[idx] = cast(JavaParams, stage)._to_java()
+            bridge.array_set(java_stages, idx, cast(JavaParams, stage)._to_java())
 
         _java_obj = JavaParams._new_java_obj(
             "org.apache.spark.ml.PipelineModel", self.uid, java_stages

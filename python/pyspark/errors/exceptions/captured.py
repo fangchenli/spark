@@ -99,13 +99,13 @@ class CapturedException(PySparkException):
 
     def getCondition(self) -> Optional[str]:
         from pyspark import SparkContext
-        from py4j.java_gateway import is_instance_of
+        from pyspark.jvm_bridge import get_bridge
 
-        assert SparkContext._gateway is not None
+        assert SparkContext._jvm is not None
 
-        gw = SparkContext._gateway
-        if self._origin is not None and is_instance_of(
-            gw, self._origin, "org.apache.spark.SparkThrowable"
+        bridge = get_bridge()
+        if self._origin is not None and bridge.is_instance_of(
+            self._origin, "org.apache.spark.SparkThrowable"
         ):
             utils = SparkContext._jvm.PythonErrorUtils  # type: ignore[union-attr]
             return utils.getCondition(self._origin)
@@ -118,13 +118,13 @@ class CapturedException(PySparkException):
 
     def getMessageParameters(self) -> Optional[Dict[str, str]]:
         from pyspark import SparkContext
-        from py4j.java_gateway import is_instance_of
+        from pyspark.jvm_bridge import get_bridge
 
-        assert SparkContext._gateway is not None
+        assert SparkContext._jvm is not None
 
-        gw = SparkContext._gateway
-        if self._origin is not None and is_instance_of(
-            gw, self._origin, "org.apache.spark.SparkThrowable"
+        bridge = get_bridge()
+        if self._origin is not None and bridge.is_instance_of(
+            self._origin, "org.apache.spark.SparkThrowable"
         ):
             utils = SparkContext._jvm.PythonErrorUtils  # type: ignore[union-attr]
             return dict(utils.getMessageParameters(self._origin))
@@ -133,12 +133,13 @@ class CapturedException(PySparkException):
 
     def getSqlState(self) -> Optional[str]:
         from pyspark import SparkContext
-        from py4j.java_gateway import is_instance_of
+        from pyspark.jvm_bridge import get_bridge
 
-        assert SparkContext._gateway is not None
-        gw = SparkContext._gateway
-        if self._origin is not None and is_instance_of(
-            gw, self._origin, "org.apache.spark.SparkThrowable"
+        assert SparkContext._jvm is not None
+
+        bridge = get_bridge()
+        if self._origin is not None and bridge.is_instance_of(
+            self._origin, "org.apache.spark.SparkThrowable"
         ):
             utils = SparkContext._jvm.PythonErrorUtils  # type: ignore[union-attr]
             return utils.getSqlState(self._origin)
@@ -147,19 +148,20 @@ class CapturedException(PySparkException):
 
     def getMessage(self) -> str:
         from pyspark import SparkContext
-        from py4j.java_gateway import is_instance_of
+        from pyspark.jvm_bridge import get_bridge
 
-        assert SparkContext._gateway is not None
-        gw = SparkContext._gateway
+        assert SparkContext._jvm is not None
 
-        if self._origin is not None and is_instance_of(
-            gw, self._origin, "org.apache.spark.SparkThrowable"
+        bridge = get_bridge()
+        if self._origin is not None and bridge.is_instance_of(
+            self._origin, "org.apache.spark.SparkThrowable"
         ):
             utils = SparkContext._jvm.PythonErrorUtils  # type: ignore[union-attr]
             errorClass = utils.getCondition(self._origin)
             messageParameters = utils.getMessageParameters(self._origin)
 
-            error_message = getattr(gw.jvm, "org.apache.spark.SparkThrowableHelper").getMessage(
+            error_message = bridge.call_static(
+                "org.apache.spark.SparkThrowableHelper", "getMessage",
                 errorClass, messageParameters
             )
 
@@ -169,13 +171,13 @@ class CapturedException(PySparkException):
 
     def getQueryContext(self) -> List[BaseQueryContext]:
         from pyspark import SparkContext
-        from py4j.java_gateway import is_instance_of
+        from pyspark.jvm_bridge import get_bridge
 
-        assert SparkContext._gateway is not None
+        assert SparkContext._jvm is not None
 
-        gw = SparkContext._gateway
-        if self._origin is not None and is_instance_of(
-            gw, self._origin, "org.apache.spark.SparkThrowable"
+        bridge = get_bridge()
+        if self._origin is not None and bridge.is_instance_of(
+            self._origin, "org.apache.spark.SparkThrowable"
         ):
             contexts: List[BaseQueryContext] = []
             utils = SparkContext._jvm.PythonErrorUtils  # type: ignore[union-attr]
@@ -197,48 +199,47 @@ def convert_exception(e: "Py4JJavaError") -> CapturedException:
 
 def _convert_exception(e: "Py4JJavaError") -> CapturedException:
     from pyspark import SparkContext
-    from py4j.java_gateway import is_instance_of
+    from pyspark.jvm_bridge import get_bridge
 
     assert e is not None
     assert SparkContext._jvm is not None
-    assert SparkContext._gateway is not None
 
     jvm = SparkContext._jvm
-    gw = SparkContext._gateway
+    bridge = get_bridge()
 
-    if is_instance_of(gw, e, "org.apache.spark.sql.catalyst.parser.ParseException"):
+    if bridge.is_instance_of(e, "org.apache.spark.sql.catalyst.parser.ParseException"):
         return ParseException(origin=e)
     # Order matters. ParseException inherits AnalysisException.
-    elif is_instance_of(gw, e, "org.apache.spark.sql.AnalysisException"):
+    elif bridge.is_instance_of(e, "org.apache.spark.sql.AnalysisException"):
         return AnalysisException(origin=e)
-    elif is_instance_of(gw, e, "org.apache.spark.sql.streaming.StreamingQueryException"):
+    elif bridge.is_instance_of(e, "org.apache.spark.sql.streaming.StreamingQueryException"):
         return StreamingQueryException(origin=e)
-    elif is_instance_of(gw, e, "org.apache.spark.sql.execution.QueryExecutionException"):
+    elif bridge.is_instance_of(e, "org.apache.spark.sql.execution.QueryExecutionException"):
         return QueryExecutionException(origin=e)
     # Order matters. NumberFormatException inherits IllegalArgumentException.
-    elif is_instance_of(gw, e, "java.lang.NumberFormatException"):
+    elif bridge.is_instance_of(e, "java.lang.NumberFormatException"):
         return NumberFormatException(origin=e)
-    elif is_instance_of(gw, e, "java.lang.IllegalArgumentException"):
+    elif bridge.is_instance_of(e, "java.lang.IllegalArgumentException"):
         return IllegalArgumentException(origin=e)
-    elif is_instance_of(gw, e, "java.lang.ArithmeticException"):
+    elif bridge.is_instance_of(e, "java.lang.ArithmeticException"):
         return ArithmeticException(origin=e)
-    elif is_instance_of(gw, e, "java.lang.UnsupportedOperationException"):
+    elif bridge.is_instance_of(e, "java.lang.UnsupportedOperationException"):
         return UnsupportedOperationException(origin=e)
-    elif is_instance_of(gw, e, "java.lang.ArrayIndexOutOfBoundsException"):
+    elif bridge.is_instance_of(e, "java.lang.ArrayIndexOutOfBoundsException"):
         return ArrayIndexOutOfBoundsException(origin=e)
-    elif is_instance_of(gw, e, "java.time.DateTimeException"):
+    elif bridge.is_instance_of(e, "java.time.DateTimeException"):
         return DateTimeException(origin=e)
-    elif is_instance_of(gw, e, "org.apache.spark.SparkRuntimeException"):
+    elif bridge.is_instance_of(e, "org.apache.spark.SparkRuntimeException"):
         return SparkRuntimeException(origin=e)
-    elif is_instance_of(gw, e, "org.apache.spark.SparkUpgradeException"):
+    elif bridge.is_instance_of(e, "org.apache.spark.SparkUpgradeException"):
         return SparkUpgradeException(origin=e)
-    elif is_instance_of(gw, e, "org.apache.spark.SparkNoSuchElementException"):
+    elif bridge.is_instance_of(e, "org.apache.spark.SparkNoSuchElementException"):
         return SparkNoSuchElementException(origin=e)
 
     c: "Py4JJavaError" = e.getCause()
     stacktrace: str = getattr(jvm, "org.apache.spark.util.Utils").exceptionString(e)
     if c is not None and (
-        is_instance_of(gw, c, "org.apache.spark.api.python.PythonException")
+        bridge.is_instance_of(c, "org.apache.spark.api.python.PythonException")
         # To make sure this only catches Python UDFs.
         and any(
             map(
@@ -275,18 +276,15 @@ def capture_sql_exception(f: Callable[..., Any]) -> Callable[..., Any]:
 
 @contextmanager
 def unwrap_spark_exception() -> Iterator[Any]:
-    from pyspark import SparkContext
     from py4j.protocol import Py4JJavaError
-    from py4j.java_gateway import is_instance_of
+    from pyspark.jvm_bridge import get_bridge
 
-    assert SparkContext._gateway is not None
-
-    gw = SparkContext._gateway
     try:
         yield
     except Py4JJavaError as e:
         je: "Py4JJavaError" = e.java_exception
-        if je is not None and is_instance_of(gw, je, "org.apache.spark.SparkException"):
+        bridge = get_bridge()
+        if je is not None and bridge.is_instance_of(je, "org.apache.spark.SparkException"):
             converted = convert_exception(je.getCause())
             if not isinstance(converted, UnknownException):
                 raise converted from None

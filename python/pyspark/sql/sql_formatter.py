@@ -45,21 +45,18 @@ class SQLStringFormatter(string.Formatter):
         """
         Converts the given value into a SQL string.
         """
-        from py4j.java_gateway import is_instance_of
-
-        from pyspark import SparkContext
+        from pyspark.jvm_bridge import get_bridge
         from pyspark.sql import Column, DataFrame, SparkSession
 
         if isinstance(val, Column):
             jsession = SparkSession.active()._jsparkSession
             jexpr = jsession.expression(val._jc)
 
-            assert SparkContext._gateway is not None
-            gw = SparkContext._gateway
-            if is_instance_of(
-                gw, jexpr, "org.apache.spark.sql.catalyst.analysis.UnresolvedAttribute"
-            ) or is_instance_of(
-                gw, jexpr, "org.apache.spark.sql.catalyst.expressions.AttributeReference"
+            bridge = get_bridge()
+            if bridge.is_instance_of(
+                jexpr, "org.apache.spark.sql.catalyst.analysis.UnresolvedAttribute"
+            ) or bridge.is_instance_of(
+                jexpr, "org.apache.spark.sql.catalyst.expressions.AttributeReference"
             ):
                 return jexpr.sql()
             else:

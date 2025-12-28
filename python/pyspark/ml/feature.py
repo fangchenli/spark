@@ -1234,12 +1234,7 @@ class CountVectorizerModel(
             )
 
         else:
-            from pyspark.core.context import SparkContext
-
-            sc = SparkContext._active_spark_context
-            assert sc is not None and sc._gateway is not None
-            java_class = getattr(sc._gateway.jvm, "java.lang.String")
-            jvocab = CountVectorizerModel._new_java_array(vocabulary, java_class)
+            jvocab = CountVectorizerModel._new_java_array(vocabulary, "java.lang.String")
             model = CountVectorizerModel._create_from_java_class(
                 "org.apache.spark.ml.feature.CountVectorizerModel", jvocab
             )
@@ -4857,10 +4852,7 @@ class StringIndexerModel(
         else:
             from pyspark.core.context import SparkContext
 
-            sc = SparkContext._active_spark_context
-            assert sc is not None and sc._gateway is not None
-            java_class = getattr(sc._gateway.jvm, "java.lang.String")
-            jlabels = StringIndexerModel._new_java_array(labels, java_class)
+            jlabels = StringIndexerModel._new_java_array(labels, "java.lang.String")
             model = StringIndexerModel._create_from_java_class(
                 "org.apache.spark.ml.feature.StringIndexerModel", jlabels
             )
@@ -4899,12 +4891,7 @@ class StringIndexerModel(
             )
 
         else:
-            from pyspark.core.context import SparkContext
-
-            sc = SparkContext._active_spark_context
-            assert sc is not None and sc._gateway is not None
-            java_class = getattr(sc._gateway.jvm, "java.lang.String")
-            jlabels = StringIndexerModel._new_java_array(arrayOfLabels, java_class)
+            jlabels = StringIndexerModel._new_java_array(arrayOfLabels, "java.lang.String")
             model = StringIndexerModel._create_from_java_class(
                 "org.apache.spark.ml.feature.StringIndexerModel", jlabels
             )

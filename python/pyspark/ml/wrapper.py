@@ -59,11 +59,10 @@ class JavaWrapper:
     def __del__(self) -> None:
         try:
             from pyspark.core.context import SparkContext
+            from pyspark.jvm_bridge import get_bridge
 
             if SparkContext._active_spark_context and self._java_obj is not None:
-                SparkContext._active_spark_context._gateway.detach(  # type: ignore[union-attr]
-                    self._java_obj
-                )
+                get_bridge().detach(self._java_obj)
         except Exception:
             pass
 
@@ -104,7 +103,7 @@ class JavaWrapper:
         return java_obj(*java_args)
 
     @staticmethod
-    def _new_java_array(pylist: List[Any], java_class: "JavaClass") -> "JavaObject":
+    def _new_java_array(pylist: List[Any], java_class: str) -> "JavaObject":
         """
         Create a Java array of given java_class type. Useful for
         calling a method with a Scala Array from Python with Py4J.
@@ -117,44 +116,44 @@ class JavaWrapper:
         ----------
         pylist : list
             Python list to convert to a Java Array.
-        java_class : :py:class:`py4j.java_gateway.JavaClass`
-            Java class to specify the type of Array. Should be in the
-            form of sc._gateway.jvm.* (sc is a valid Spark Context).
+        java_class : str
+            Fully qualified Java class name to specify the type of Array.
 
-            Example primitive Java classes:
+            Example class names:
 
-            - basestring -> sc._gateway.jvm.java.lang.String
-            - int -> sc._gateway.jvm.java.lang.Integer
-            - float -> sc._gateway.jvm.java.lang.Double
-            - bool -> sc._gateway.jvm.java.lang.Boolean
+            - "java.lang.String"
+            - "java.lang.Integer"
+            - "java.lang.Double"
+            - "java.lang.Boolean"
 
         Returns
         -------
-        :py:class:`py4j.java_collections.JavaArray`
-          Java Array of converted pylist.
+        Java Array of converted pylist.
         """
-        from pyspark.core.context import SparkContext
+        from pyspark.jvm_bridge import get_bridge
 
-        sc = SparkContext._active_spark_context
-        assert sc is not None
-        assert sc._gateway is not None
-
-        java_array = None
+        bridge = get_bridge()
         if len(pylist) > 0 and isinstance(pylist[0], list):
-            # If pylist is a 2D array, then a 2D java array will be created.
+            # If pylist is a 2D array, create an array of arrays.
             # The 2D array is a square, non-jagged 2D array that is big enough for all elements.
             inner_array_length = 0
             for i in range(len(pylist)):
                 inner_array_length = max(inner_array_length, len(pylist[i]))
-            java_array = sc._gateway.new_array(java_class, len(pylist), inner_array_length)
+            # Create outer array to hold inner arrays
+            # The element type is an array of java_class, represented as "[L<class>;"
+            outer_array = bridge.new_array("[L" + java_class + ";", len(pylist))
             for i in range(len(pylist)):
+                # Create inner array
+                inner_array = bridge.new_array(java_class, inner_array_length)
                 for j in range(len(pylist[i])):
-                    java_array[i][j] = pylist[i][j]
+                    bridge.array_set(inner_array, j, pylist[i][j])
+                bridge.array_set(outer_array, i, inner_array)
+            return outer_array
         else:
-            java_array = sc._gateway.new_array(java_class, len(pylist))
+            java_array = bridge.new_array(java_class, len(pylist))
             for i in range(len(pylist)):
-                java_array[i] = pylist[i]
-        return java_array
+                bridge.array_set(java_array, i, pylist[i])
+            return java_array
 
 
 @inherit_doc

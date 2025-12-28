@@ -18,124 +18,24 @@
 """
 JVM Bridge abstraction for PySpark.
 
-This module provides a clean abstraction layer between PySpark and the JVM backend,
-allowing both Py4J and Gatun to implement the same contract.
+This module provides a clean abstraction layer between PySpark and the JVM backend.
+The BridgeAdapter interface defines the contract that any Python-JVM bridge must implement.
 
 Usage:
-    from pyspark.jvm_bridge import get_bridge, BridgeAdapter
+    from pyspark.jvm_bridge import get_bridge
 
-    bridge = get_bridge()  # Returns Py4JAdapter or GatunAdapter based on config
+    bridge = get_bridge()  # Returns the initialized BridgeAdapter
     arr = bridge.new("java.util.ArrayList")
     bridge.call(arr, "add", "hello")
 """
 
 from __future__ import annotations
 
-import os
 from abc import ABC, abstractmethod
-from typing import Any, Protocol, runtime_checkable, TYPE_CHECKING
+from typing import Any, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from py4j.java_gateway import JavaGateway
-
-
-# =============================================================================
-# Protocol Definitions
-# =============================================================================
-
-
-@runtime_checkable
-class JVMRef(Protocol):
-    """Opaque reference to a JVM object."""
-
-    @property
-    def object_id(self) -> int:
-        """Unique identifier for this object in the JVM."""
-        ...
-
-
-class JVMView(ABC):
-    """View into JVM class hierarchy.
-
-    Supports attribute-style navigation:
-        jvm.java.util.ArrayList  -> class reference
-        jvm.java.util.ArrayList() -> new instance
-        jvm.java.lang.Integer.MAX_VALUE -> static field
-        jvm.java.lang.Integer.parseInt("42") -> static method call
-    """
-
-    @abstractmethod
-    def __getattr__(self, name: str) -> "JVMView | JVMRef | Any":
-        """Navigate to package, class, or access static member."""
-        ...
-
-    @abstractmethod
-    def __call__(self, *args: Any) -> JVMRef:
-        """Create instance of this class."""
-        ...
-
-
-# =============================================================================
-# Exception Hierarchy
-# =============================================================================
-
-
-class JavaException(Exception):
-    """Base class for Java exceptions raised in Python."""
-
-    def __init__(self, java_class: str, message: str, stack_trace: str = ""):
-        self.java_class = java_class
-        self.message = message
-        self.stack_trace = stack_trace
-        super().__init__(f"{java_class}: {message}")
-
-
-class JavaSecurityException(JavaException):
-    """java.lang.SecurityException"""
-
-    pass
-
-
-class JavaIllegalArgumentException(JavaException):
-    """java.lang.IllegalArgumentException"""
-
-    pass
-
-
-class JavaNoSuchMethodException(JavaException):
-    """java.lang.NoSuchMethodException"""
-
-    pass
-
-
-class JavaClassNotFoundException(JavaException):
-    """java.lang.ClassNotFoundException"""
-
-    pass
-
-
-class JavaNullPointerException(JavaException):
-    """java.lang.NullPointerException"""
-
-    pass
-
-
-class JavaIndexOutOfBoundsException(JavaException):
-    """java.lang.IndexOutOfBoundsException"""
-
-    pass
-
-
-# Mapping from Java exception class names to Python exception classes
-JAVA_EXCEPTION_MAP = {
-    "java.lang.SecurityException": JavaSecurityException,
-    "java.lang.IllegalArgumentException": JavaIllegalArgumentException,
-    "java.lang.NoSuchMethodException": JavaNoSuchMethodException,
-    "java.lang.ClassNotFoundException": JavaClassNotFoundException,
-    "java.lang.NullPointerException": JavaNullPointerException,
-    "java.lang.IndexOutOfBoundsException": JavaIndexOutOfBoundsException,
-    "java.lang.ArrayIndexOutOfBoundsException": JavaIndexOutOfBoundsException,
-}
 
 
 # =============================================================================
@@ -153,8 +53,16 @@ class BridgeAdapter(ABC):
     # === Object Lifecycle ===
 
     @abstractmethod
-    def new(self, class_name: str, *args: Any) -> JVMRef:
-        """Create a new JVM object."""
+    def new(self, class_name: str, *args: Any) -> Any:
+        """Create a new JVM object.
+
+        Args:
+            class_name: Fully qualified class name (e.g., "java.util.ArrayList")
+            *args: Constructor arguments (Python types auto-converted)
+
+        Returns:
+            Reference to the created object
+        """
         ...
 
     @abstractmethod
@@ -163,31 +71,53 @@ class BridgeAdapter(ABC):
         ...
 
     @abstractmethod
-    def detach(self, ref: JVMRef) -> None:
-        """Prevent automatic cleanup of this object reference."""
+    def detach(self, ref: Any) -> None:
+        """Prevent automatic cleanup of this object reference.
+
+        Used when passing objects to long-lived Java structures that will
+        manage the object's lifecycle.
+        """
         ...
 
     # === Method Calls ===
 
     @abstractmethod
-    def call(self, ref: JVMRef, method: str, *args: Any) -> Any:
-        """Call an instance method on a JVM object."""
+    def call(self, ref: Any, method: str, *args: Any) -> Any:
+        """Call an instance method on a JVM object.
+
+        Args:
+            ref: Object reference
+            method: Method name
+            *args: Method arguments (auto-converted)
+
+        Returns:
+            Method result (object ref for objects, Python types for primitives)
+        """
         ...
 
     @abstractmethod
     def call_static(self, class_name: str, method: str, *args: Any) -> Any:
-        """Call a static method on a JVM class."""
+        """Call a static method on a JVM class.
+
+        Args:
+            class_name: Fully qualified class name
+            method: Static method name
+            *args: Method arguments
+
+        Returns:
+            Method result
+        """
         ...
 
     # === Field Access ===
 
     @abstractmethod
-    def get_field(self, ref: JVMRef, name: str) -> Any:
+    def get_field(self, ref: Any, name: str) -> Any:
         """Get an instance field value."""
         ...
 
     @abstractmethod
-    def set_field(self, ref: JVMRef, name: str, value: Any) -> None:
+    def set_field(self, ref: Any, name: str, value: Any) -> None:
         """Set an instance field value."""
         ...
 
@@ -204,29 +134,39 @@ class BridgeAdapter(ABC):
     # === Type Checking ===
 
     @abstractmethod
-    def is_instance_of(self, ref: JVMRef, class_name: str) -> bool:
-        """Check if object is instance of class."""
+    def is_instance_of(self, ref: Any, class_name: str) -> bool:
+        """Check if object is instance of class (supports interfaces)."""
         ...
 
     # === Arrays ===
 
     @abstractmethod
-    def new_array(self, element_class: str, length: int) -> JVMRef:
-        """Create a new JVM array."""
+    def new_array(self, element_class: str, length: int) -> Any:
+        """Create a new JVM array.
+
+        Args:
+            element_class: Element type. For primitives use lowercase
+                          ("int", "long", "double", etc.). For objects
+                          use fully qualified name ("java.lang.String").
+            length: Array length
+
+        Returns:
+            Reference to the array
+        """
         ...
 
     @abstractmethod
-    def array_get(self, array_ref: JVMRef, index: int) -> Any:
+    def array_get(self, array_ref: Any, index: int) -> Any:
         """Get element at index from JVM array."""
         ...
 
     @abstractmethod
-    def array_set(self, array_ref: JVMRef, index: int, value: Any) -> None:
+    def array_set(self, array_ref: Any, index: int, value: Any) -> None:
         """Set element at index in JVM array."""
         ...
 
     @abstractmethod
-    def array_length(self, array_ref: JVMRef) -> int:
+    def array_length(self, array_ref: Any) -> int:
         """Get length of JVM array."""
         ...
 
@@ -234,13 +174,24 @@ class BridgeAdapter(ABC):
 
     @property
     @abstractmethod
-    def jvm(self) -> JVMView:
-        """Get JVM view for navigating classes."""
+    def jvm(self) -> Any:
+        """Get JVM view for navigating classes.
+
+        Allows: bridge.jvm.java.util.ArrayList()
+        Instead of: bridge.new("java.util.ArrayList")
+        """
         ...
 
     @abstractmethod
     def java_import(self, package: str) -> None:
-        """Import package for shorter class names."""
+        """Import package for shorter class names.
+
+        Args:
+            package: Package path with optional wildcard (e.g., "java.util.*")
+
+        After calling java_import("java.util.*"), you can use:
+            bridge.jvm.ArrayList() instead of bridge.jvm.java.util.ArrayList()
+        """
         ...
 
 
@@ -262,19 +213,14 @@ class Py4JAdapter(BridgeAdapter):
 
     # === Object Lifecycle ===
 
-    def new(self, class_name: str, *args: Any) -> JVMRef:
+    def new(self, class_name: str, *args: Any) -> Any:
         """Create a new JVM object."""
-        from py4j.protocol import Py4JJavaError
-
-        try:
-            # Navigate to the class via JVM view
-            parts = class_name.split(".")
-            cls = self._gateway.jvm
-            for part in parts:
-                cls = getattr(cls, part)
-            return cls(*args)
-        except Py4JJavaError as e:
-            raise self._convert_exception(e) from None
+        # Navigate to the class via JVM view
+        parts = class_name.split(".")
+        cls = self._gateway.jvm
+        for part in parts:
+            cls = getattr(cls, part)
+        return cls(*args)
 
     def close(self) -> None:
         """Close the bridge and release all resources."""
@@ -282,7 +228,7 @@ class Py4JAdapter(BridgeAdapter):
             self._gateway.shutdown()
             self._gateway = None
 
-    def detach(self, ref: JVMRef) -> None:
+    def detach(self, ref: Any) -> None:
         """Prevent automatic cleanup of this object reference."""
         if hasattr(ref, "_detach"):
             ref._detach()
@@ -291,79 +237,49 @@ class Py4JAdapter(BridgeAdapter):
 
     # === Method Calls ===
 
-    def call(self, ref: JVMRef, method: str, *args: Any) -> Any:
+    def call(self, ref: Any, method: str, *args: Any) -> Any:
         """Call an instance method on a JVM object."""
-        from py4j.protocol import Py4JJavaError
-
-        try:
-            method_obj = getattr(ref, method)
-            return method_obj(*args)
-        except Py4JJavaError as e:
-            raise self._convert_exception(e) from None
+        method_obj = getattr(ref, method)
+        return method_obj(*args)
 
     def call_static(self, class_name: str, method: str, *args: Any) -> Any:
         """Call a static method on a JVM class."""
-        from py4j.protocol import Py4JJavaError
-
-        try:
-            parts = class_name.split(".")
-            cls = self._gateway.jvm
-            for part in parts:
-                cls = getattr(cls, part)
-            method_obj = getattr(cls, method)
-            return method_obj(*args)
-        except Py4JJavaError as e:
-            raise self._convert_exception(e) from None
+        parts = class_name.split(".")
+        cls = self._gateway.jvm
+        for part in parts:
+            cls = getattr(cls, part)
+        method_obj = getattr(cls, method)
+        return method_obj(*args)
 
     # === Field Access ===
 
-    def get_field(self, ref: JVMRef, name: str) -> Any:
+    def get_field(self, ref: Any, name: str) -> Any:
         """Get an instance field value."""
-        from py4j.protocol import Py4JJavaError
+        return getattr(ref, name)
 
-        try:
-            return getattr(ref, name)
-        except Py4JJavaError as e:
-            raise self._convert_exception(e) from None
-
-    def set_field(self, ref: JVMRef, name: str, value: Any) -> None:
+    def set_field(self, ref: Any, name: str, value: Any) -> None:
         """Set an instance field value."""
-        from py4j.protocol import Py4JJavaError
-
-        try:
-            setattr(ref, name, value)
-        except Py4JJavaError as e:
-            raise self._convert_exception(e) from None
+        setattr(ref, name, value)
 
     def get_static_field(self, class_name: str, name: str) -> Any:
         """Get a static field value."""
-        from py4j.protocol import Py4JJavaError
-
-        try:
-            parts = class_name.split(".")
-            cls = self._gateway.jvm
-            for part in parts:
-                cls = getattr(cls, part)
-            return getattr(cls, name)
-        except Py4JJavaError as e:
-            raise self._convert_exception(e) from None
+        parts = class_name.split(".")
+        cls = self._gateway.jvm
+        for part in parts:
+            cls = getattr(cls, part)
+        return getattr(cls, name)
 
     def set_static_field(self, class_name: str, name: str, value: Any) -> None:
         """Set a static field value."""
-        from py4j.protocol import Py4JJavaError
-
-        try:
-            parts = class_name.split(".")
-            cls = self._gateway.jvm
-            for part in parts:
-                cls = getattr(cls, part)
-            setattr(cls, name, value)
-        except Py4JJavaError as e:
-            raise self._convert_exception(e) from None
+        parts = class_name.split(".")
+        cls = self._gateway.jvm
+        for part in parts:
+            cls = getattr(cls, part)
+        setattr(cls, name, value)
 
     # === Type Checking ===
 
-    def is_instance_of(self, ref: JVMRef, class_name: str) -> bool:
+    def is_instance_of(self, ref: Any, class_name: str) -> bool:
         """Check if object is instance of class."""
         from py4j.java_gateway import is_instance_of
 
@@ -371,7 +287,7 @@ class Py4JAdapter(BridgeAdapter):
 
     # === Arrays ===
 
-    def new_array(self, element_class: str, length: int) -> JVMRef:
+    def new_array(self, element_class: str, length: int) -> Any:
         """Create a new JVM array."""
         # Navigate to the class
         parts = element_class.split(".")
@@ -380,22 +296,22 @@ class Py4JAdapter(BridgeAdapter):
             cls = getattr(cls, part)
         return self._gateway.new_array(cls, length)
 
-    def array_get(self, array_ref: JVMRef, index: int) -> Any:
+    def array_get(self, array_ref: Any, index: int) -> Any:
         """Get element at index from JVM array."""
         return array_ref[index]
 
-    def array_set(self, array_ref: JVMRef, index: int, value: Any) -> None:
+    def array_set(self, array_ref: Any, index: int, value: Any) -> None:
         """Set element at index in JVM array."""
         array_ref[index] = value
 
-    def array_length(self, array_ref: JVMRef) -> int:
+    def array_length(self, array_ref: Any) -> int:
         """Get length of JVM array."""
         return len(array_ref)
 
     # === JVM View ===
 
     @property
-    def jvm(self) -> JVMView:
+    def jvm(self) -> Any:
         """Get JVM view for navigating classes."""
         return self._gateway.jvm
 
@@ -404,204 +320,6 @@ class Py4JAdapter(BridgeAdapter):
         from py4j.java_gateway import java_import
 
         java_import(self._gateway.jvm, package)
-
-    # === Exception Conversion ===
-
-    def _convert_exception(self, exc) -> JavaException:
-        """Convert Py4J exception to bridge JavaException."""
-        java_class = ""
-        message = str(exc)
-        stack_trace = ""
-
-        if hasattr(exc, "java_exception"):
-            java_exc = exc.java_exception
-            if hasattr(java_exc, "getClass"):
-                java_class = java_exc.getClass().getName()
-            if hasattr(java_exc, "getMessage"):
-                message = java_exc.getMessage() or message
-            if hasattr(java_exc, "toString"):
-                stack_trace = str(java_exc)
-
-        exc_class = JAVA_EXCEPTION_MAP.get(java_class, JavaException)
-        return exc_class(java_class, message, stack_trace)
-
-
-# =============================================================================
-# Gatun Adapter
-# =============================================================================
-
-
-class GatunAdapter(BridgeAdapter):
-    """BridgeAdapter implementation backed by Gatun."""
-
-    def __init__(self, memory: str = "256MB", classpath: list[str] | None = None):
-        """Create a new GatunAdapter.
-
-        Args:
-            memory: Shared memory size (e.g., "64MB", "256MB")
-            classpath: Additional JAR files for the classpath
-        """
-        from gatun import connect as gatun_connect
-
-        self._client = gatun_connect(memory=memory)
-
-    # === Object Lifecycle ===
-
-    def new(self, class_name: str, *args: Any) -> JVMRef:
-        """Create a new JVM object."""
-        try:
-            return self._client.create_object(class_name, *args)
-        except Exception as e:
-            raise self._convert_exception(e) from None
-
-    def close(self) -> None:
-        """Close the bridge and release all resources."""
-        if self._client:
-            self._client.close()
-            self._client = None
-
-    def detach(self, ref: JVMRef) -> None:
-        """Prevent automatic cleanup of this object reference."""
-        if hasattr(ref, "detach"):
-            ref.detach()
-
-    # === Method Calls ===
-
-    def call(self, ref: JVMRef, method: str, *args: Any) -> Any:
-        """Call an instance method on a JVM object."""
-        try:
-            obj_id = ref.object_id if hasattr(ref, "object_id") else ref
-            return self._client.invoke_method(obj_id, method, *args)
-        except Exception as e:
-            raise self._convert_exception(e) from None
-
-    def call_static(self, class_name: str, method: str, *args: Any) -> Any:
-        """Call a static method on a JVM class."""
-        try:
-            return self._client.invoke_static_method(class_name, method, *args)
-        except Exception as e:
-            raise self._convert_exception(e) from None
-
-    # === Field Access ===
-
-    def get_field(self, ref: JVMRef, name: str) -> Any:
-        """Get an instance field value."""
-        try:
-            obj_id = ref.object_id if hasattr(ref, "object_id") else ref
-            return self._client.get_field(obj_id, name)
-        except Exception as e:
-            raise self._convert_exception(e) from None
-
-    def set_field(self, ref: JVMRef, name: str, value: Any) -> None:
-        """Set an instance field value."""
-        try:
-            obj_id = ref.object_id if hasattr(ref, "object_id") else ref
-            self._client.set_field(obj_id, name, value)
-        except Exception as e:
-            raise self._convert_exception(e) from None
-
-    def get_static_field(self, class_name: str, name: str) -> Any:
-        """Get a static field value."""
-        try:
-            return self._client.get_static_field(class_name, name)
-        except Exception as e:
-            raise self._convert_exception(e) from None
-
-    def set_static_field(self, class_name: str, name: str, value: Any) -> None:
-        """Set a static field value."""
-        try:
-            self._client.set_static_field(class_name, name, value)
-        except Exception as e:
-            raise self._convert_exception(e) from None
-
-    # === Type Checking ===
-
-    def is_instance_of(self, ref: JVMRef, class_name: str) -> bool:
-        """Check if object is instance of class."""
-        try:
-            return self._client.is_instance_of(ref, class_name)
-        except Exception as e:
-            raise self._convert_exception(e) from None
-
-    # === Arrays ===
-
-    _PRIMITIVE_TYPES = {
-        "int": ("java.lang.Integer", "TYPE"),
-        "long": ("java.lang.Long", "TYPE"),
-        "double": ("java.lang.Double", "TYPE"),
-        "float": ("java.lang.Float", "TYPE"),
-        "boolean": ("java.lang.Boolean", "TYPE"),
-        "byte": ("java.lang.Byte", "TYPE"),
-        "short": ("java.lang.Short", "TYPE"),
-        "char": ("java.lang.Character", "TYPE"),
-    }
-
-    def new_array(self, element_class: str, length: int) -> JVMRef:
-        """Create a new JVM array."""
-        try:
-            if element_class in self._PRIMITIVE_TYPES:
-                wrapper_class, field = self._PRIMITIVE_TYPES[element_class]
-                class_obj = self._client.get_static_field(wrapper_class, field)
-            else:
-                class_obj = self._client.invoke_static_method(
-                    "java.lang.Class", "forName", element_class
-                )
-            return self._client.invoke_static_method(
-                "java.lang.reflect.Array", "newInstance", class_obj, length
-            )
-        except Exception as e:
-            raise self._convert_exception(e) from None
-
-    def array_get(self, array_ref: JVMRef, index: int) -> Any:
-        """Get element at index from JVM array."""
-        try:
-            return self._client.invoke_static_method(
-                "java.lang.reflect.Array", "get", array_ref, index
-            )
-        except Exception as e:
-            raise self._convert_exception(e) from None
-
-    def array_set(self, array_ref: JVMRef, index: int, value: Any) -> None:
-        """Set element at index in JVM array."""
-        try:
-            self._client.invoke_static_method(
-                "java.lang.reflect.Array", "set", array_ref, index, value
-            )
-        except Exception as e:
-            raise self._convert_exception(e) from None
-
-    def array_length(self, array_ref: JVMRef) -> int:
-        """Get length of JVM array."""
-        try:
-            return self._client.invoke_static_method(
-                "java.lang.reflect.Array", "getLength", array_ref
-            )
-        except Exception as e:
-            raise self._convert_exception(e) from None
-
-    # === JVM View ===
-
-    @property
-    def jvm(self) -> JVMView:
-        """Get JVM view for navigating classes."""
-        return self._client.jvm
-
-    def java_import(self, package: str) -> None:
-        """Import package for shorter class names."""
-        from gatun import java_import as gatun_java_import
-
-        gatun_java_import(self._client.jvm, package)
-
-    # === Exception Conversion ===
-
-    def _convert_exception(self, exc) -> JavaException:
-        """Convert Gatun exception to bridge JavaException."""
-        java_class = getattr(exc, "java_class", type(exc).__name__)
-        message = getattr(exc, "message", str(exc))
-        stack_trace = getattr(exc, "stack_trace", "")
-
-        exc_class = JAVA_EXCEPTION_MAP.get(java_class, JavaException)
-        return exc_class(java_class, message, stack_trace)
 
 
 # =============================================================================
@@ -615,28 +333,33 @@ _bridge: BridgeAdapter | None = None
 def get_bridge() -> BridgeAdapter:
     """Get the singleton BridgeAdapter instance.
 
-    Returns the appropriate adapter based on configuration:
-    - If PYSPARK_USE_GATUN=true, returns GatunAdapter
-    - Otherwise, returns Py4JAdapter (requires existing gateway)
+    Returns the bridge adapter. The bridge must be initialized first via
+    create_bridge_from_gateway() during SparkContext initialization.
 
-    This function is intended for use during SparkContext initialization.
+    Raises:
+        RuntimeError: If the bridge has not been initialized yet.
     """
     global _bridge
-    if _bridge is not None:
-        return _bridge
-
-    use_gatun = os.environ.get("PYSPARK_USE_GATUN", "").lower() in ("true", "1", "yes")
-
-    if use_gatun:
-        memory = os.environ.get("GATUN_MEMORY", "256MB")
-        _bridge = GatunAdapter(memory=memory)
-    else:
+    if _bridge is None:
         raise RuntimeError(
-            "Py4J bridge requires an existing gateway. "
-            "Use create_bridge_from_gateway() instead."
+            "Bridge not initialized. "
+            "Use create_bridge_from_gateway() to initialize during SparkContext setup."
         )
-
     return _bridge
+
+
+def get_jvm() -> Any:
+    """Get the JVM view for navigating classes.
+
+    Convenience function that returns get_bridge().jvm.
+
+    Returns:
+        JVM view for navigating JVM class hierarchy.
+
+    Raises:
+        RuntimeError: If the bridge has not been initialized yet.
+    """
+    return get_bridge().jvm
 
 
 def create_bridge_from_gateway(gateway: "JavaGateway") -> BridgeAdapter:

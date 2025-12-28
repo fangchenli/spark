@@ -444,17 +444,15 @@ class DataFrame(ParentDataFrame, PandasMapOpsMixin, PandasConversionMixin):
             elif isinstance(parameter, list):
                 # for list input, we are assuming only one element type exist in the list.
                 # for empty list, we are converting it into an empty long[] in the JVM side.
-                gateway = self._sc._gateway
-                assert gateway is not None
-                jclass = gateway.jvm.long
+                jclass = "long"
                 if len(parameter) >= 1:
                     mapping = {
-                        str: gateway.jvm.java.lang.String,
-                        float: gateway.jvm.double,
-                        int: gateway.jvm.long,
+                        str: "java.lang.String",
+                        float: "double",
+                        int: "long",
                     }
                     jclass = mapping[type(parameter[0])]
-                return to_java_array(gateway, jclass, parameter)
+                return to_java_array(jclass, parameter)
             else:
                 return parameter
 

@@ -66,22 +66,23 @@ if TYPE_CHECKING:
 FuncT = TypeVar("FuncT", bound=Callable[..., Any])
 
 
-def to_java_array(gateway: "JavaGateway", jtype: "JavaClass", arr: Sequence[Any]) -> "JavaArray":
+def to_java_array(jtype: str, arr: Sequence[Any]) -> "JavaArray":
     """
     Convert python list to java type array
 
     Parameters
     ----------
-    gateway :
-        Py4j Gateway
-    jtype :
-        java type of element in array
+    jtype : str
+        Fully qualified java class name of element type (e.g., "java.lang.String")
     arr :
         python type list
     """
-    jarray: "JavaArray" = gateway.new_array(jtype, len(arr))
+    from pyspark.jvm_bridge import get_bridge
+
+    bridge = get_bridge()
+    jarray: "JavaArray" = bridge.new_array(jtype, len(arr))
     for i in range(0, len(arr)):
-        jarray[i] = arr[i]
+        bridge.array_set(jarray, i, arr[i])
     return jarray
 
 

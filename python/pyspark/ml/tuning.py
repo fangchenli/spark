@@ -276,17 +276,18 @@ class _ValidatorParams(HasSeed):
         Return Java estimator, estimatorParamMaps, and evaluator from this Python instance.
         """
         from pyspark.core.context import SparkContext
+        from pyspark.jvm_bridge import get_bridge
 
-        gateway = SparkContext._gateway
-        assert gateway is not None and SparkContext._jvm is not None
-
-        cls = getattr(SparkContext._jvm, "org.apache.spark.ml.param.ParamMap")
+        assert SparkContext._jvm is not None
+        bridge = get_bridge()
 
         estimator = self.getEstimator()
         if isinstance(estimator, JavaEstimator):
-            java_epms = gateway.new_array(cls, len(self.getEstimatorParamMaps()))
+            java_epms = bridge.new_array(
+                "org.apache.spark.ml.param.ParamMap", len(self.getEstimatorParamMaps())
+            )
             for idx, epm in enumerate(self.getEstimatorParamMaps()):
-                java_epms[idx] = estimator._transfer_param_map_to_java(epm)
+                bridge.array_set(java_epms, idx, estimator._transfer_param_map_to_java(epm))
         elif MetaAlgorithmReadWrite.isMetaEstimator(estimator):
             # Meta estimator such as Pipeline, OneVsRest
             java_epms = _ValidatorSharedReadWrite.meta_estimator_transfer_param_maps_to_java(
@@ -307,16 +308,16 @@ class _ValidatorSharedReadWrite:
     ) -> "JavaArray":
         from pyspark.core.context import SparkContext
 
+        from pyspark.jvm_bridge import get_bridge
+
         pyStages = MetaAlgorithmReadWrite.getAllNestedStages(pyEstimator)
         stagePairs = list(map(lambda stage: (stage, cast(JavaParams, stage)._to_java()), pyStages))
         sc = SparkContext._active_spark_context
 
-        assert (
-            sc is not None and SparkContext._jvm is not None and SparkContext._gateway is not None
-        )
+        assert sc is not None and SparkContext._jvm is not None
 
-        paramMapCls = getattr(SparkContext._jvm, "org.apache.spark.ml.param.ParamMap")
-        javaParamMaps = SparkContext._gateway.new_array(paramMapCls, len(pyParamMaps))
+        bridge = get_bridge()
+        javaParamMaps = bridge.new_array("org.apache.spark.ml.param.ParamMap", len(pyParamMaps))
 
         for idx, pyParamMap in enumerate(pyParamMaps):
             javaParamMap = JavaWrapper._new_java_obj("org.apache.spark.ml.param.ParamMap")
@@ -334,7 +335,7 @@ class _ValidatorSharedReadWrite:
                     javaValue = _py2java(sc, pyValue)
                 pair = javaParam.w(javaValue)
                 javaParamMap.put([pair])
-            javaParamMaps[idx] = javaParamMap
+            bridge.array_set(javaParamMaps, idx, javaParamMap)
         return javaParamMaps
 
     @staticmethod

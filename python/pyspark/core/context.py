@@ -53,6 +53,7 @@ from pyspark.accumulators import Accumulator
 from pyspark.core.broadcast import Broadcast, BroadcastPickleRegistry
 from pyspark.core.files import SparkFiles
 from pyspark.java_gateway import launch_gateway
+from pyspark.jvm_bridge import create_bridge_from_gateway, get_bridge
 from pyspark.serializers import (
     CPickleSerializer,
     BatchedSerializer,
@@ -72,7 +73,7 @@ from pyspark.traceback_utils import CallSite, first_spark_call
 from pyspark.core.status import StatusTracker
 from pyspark.profiler import ProfilerCollector, BasicProfiler, UDFBasicProfiler, MemoryProfiler
 from pyspark.errors import PySparkRuntimeError
-from py4j.java_gateway import is_instance_of, JavaGateway, JavaObject, JVMView
+from py4j.java_gateway import JavaGateway, JavaObject, JVMView
 
 if TYPE_CHECKING:
     from pyspark.accumulators import AccumulatorParam
@@ -197,10 +198,7 @@ class SparkContext:
             SparkContext._assert_on_driver()
 
         self._callsite = first_spark_call() or CallSite(None, None, None)
-        # Skip auth check for Gatun - it uses Unix domain sockets which are inherently secure
-        # (no network exposure). Gatun always has auth_token=None since it doesn't need TCP auth.
-        _use_gatun = os.environ.get("PYSPARK_USE_GATUN", "").lower() in ("true", "1", "yes")
-        if gateway is not None and not _use_gatun and gateway.gateway_parameters.auth_token is None:
+        if gateway is not None and gateway.gateway_parameters.auth_token is None:
             raise ValueError(
                 "You are trying to pass an insecure Py4j gateway to Spark. This"
                 " is not allowed as it is a security risk."
@@ -470,6 +468,8 @@ class SparkContext:
             if not SparkContext._gateway:
                 SparkContext._gateway = gateway or launch_gateway(conf)
                 SparkContext._jvm = SparkContext._gateway.jvm
+                # Initialize the JVM bridge singleton
+                create_bridge_from_gateway(SparkContext._gateway)
 
             if instance:
                 if (
@@ -1768,25 +1768,27 @@ class SparkContext:
         first_jrdd_deserializer = rdds[0]._jrdd_deserializer
         if any(x._jrdd_deserializer != first_jrdd_deserializer for x in rdds):
             rdds = [x._reserialize() for x in rdds]
-        gw = SparkContext._gateway
-        assert gw is not None
         jvm = SparkContext._jvm
         assert jvm is not None
+        bridge = get_bridge()
         jrdd_cls = getattr(jvm, "org.apache.spark.api.java.JavaRDD")
         jpair_rdd_cls = getattr(jvm, "org.apache.spark.api.java.JavaPairRDD")
         jdouble_rdd_cls = getattr(jvm, "org.apache.spark.api.java.JavaDoubleRDD")
-        if is_instance_of(gw, rdds[0]._jrdd, jrdd_cls):
+        if bridge.is_instance_of(rdds[0]._jrdd, "org.apache.spark.api.java.JavaRDD"):
             cls = jrdd_cls
-        elif is_instance_of(gw, rdds[0]._jrdd, jpair_rdd_cls):
+            cls_name = "org.apache.spark.api.java.JavaRDD"
+        elif bridge.is_instance_of(rdds[0]._jrdd, "org.apache.spark.api.java.JavaPairRDD"):
             cls = jpair_rdd_cls
-        elif is_instance_of(gw, rdds[0]._jrdd, jdouble_rdd_cls):
+            cls_name = "org.apache.spark.api.java.JavaPairRDD"
+        elif bridge.is_instance_of(rdds[0]._jrdd, "org.apache.spark.api.java.JavaDoubleRDD"):
             cls = jdouble_rdd_cls
+            cls_name = "org.apache.spark.api.java.JavaDoubleRDD"
         else:
             cls_name = rdds[0]._jrdd.getClass().getCanonicalName()
             raise TypeError("Unsupported Java RDD class %s" % cls_name)
-        jrdds = gw.new_array(cls, len(rdds))
+        jrdds = bridge.new_array(cls_name, len(rdds))
         for i in range(0, len(rdds)):
-            jrdds[i] = rdds[i]._jrdd
+            bridge.array_set(jrdds, i, rdds[i]._jrdd)
         return RDD(self._jsc.union(jrdds), self, rdds[0]._jrdd_deserializer)
 
     def broadcast(self, value: T) -> "Broadcast[T]":

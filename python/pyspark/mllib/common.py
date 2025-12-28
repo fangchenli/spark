@@ -149,8 +149,9 @@ class JavaModelWrapper:
         self._java_model = java_model
 
     def __del__(self) -> None:
-        assert self._sc._gateway is not None
-        self._sc._gateway.detach(self._java_model)
+        from pyspark.jvm_bridge import get_bridge
+
+        get_bridge().detach(self._java_model)
 
     def call(self, name: str, *a: Any) -> Any:
         """Call method of java_model"""

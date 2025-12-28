@@ -20,9 +20,8 @@ from datetime import datetime
 import traceback
 import sys
 
-from py4j.java_gateway import is_instance_of
-
 from pyspark import SparkContext, RDD
+from pyspark.jvm_bridge import get_bridge
 
 
 class TransformFunction:
@@ -74,7 +73,8 @@ class TransformFunction:
                 # org.apache.spark.streaming.api.python.PythonTransformFunction requires to return
                 # `JavaRDD`; however, this could be `JavaPairRDD` by some APIs, for example, `zip`.
                 # See SPARK-17756.
-                if is_instance_of(self.ctx._gateway, r._jrdd, "org.apache.spark.api.java.JavaRDD"):
+                bridge = get_bridge()
+                if bridge.is_instance_of(r._jrdd, "org.apache.spark.api.java.JavaRDD"):
                     return r._jrdd
                 else:
                     return r.map(lambda x: x)._jrdd

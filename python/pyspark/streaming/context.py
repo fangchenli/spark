@@ -16,7 +16,9 @@
 #
 from typing import Any, Callable, List, Optional, TypeVar
 
-from py4j.java_gateway import java_import, is_instance_of, JavaObject
+from py4j.java_gateway import java_import, JavaObject
+
+from pyspark.jvm_bridge import get_bridge
 
 from pyspark import RDD, SparkConf
 from pyspark.serializers import NoOpSerializer, UTF8Deserializer, CloudPickleSerializer
@@ -437,21 +439,29 @@ class StreamingContext:
             raise ValueError("All DStreams should have same slide duration")
 
         assert SparkContext._jvm is not None
+        bridge = get_bridge()
         jdstream_cls = SparkContext._jvm.org.apache.spark.streaming.api.java.JavaDStream
         jpair_dstream_cls = SparkContext._jvm.org.apache.spark.streaming.api.java.JavaPairDStream
-        gw = SparkContext._gateway
-        if is_instance_of(gw, dstreams[0]._jdstream, jdstream_cls):
+
+        if bridge.is_instance_of(
+            dstreams[0]._jdstream,
+            "org.apache.spark.streaming.api.java.JavaDStream"
+        ):
             cls = jdstream_cls
-        elif is_instance_of(gw, dstreams[0]._jdstream, jpair_dstream_cls):
+            cls_name = "org.apache.spark.streaming.api.java.JavaDStream"
+        elif bridge.is_instance_of(
+            dstreams[0]._jdstream,
+            "org.apache.spark.streaming.api.java.JavaPairDStream"
+        ):
             cls = jpair_dstream_cls
+            cls_name = "org.apache.spark.streaming.api.java.JavaPairDStream"
         else:
             cls_name = dstreams[0]._jdstream.getClass().getCanonicalName()
             raise TypeError("Unsupported Java DStream class %s" % cls_name)
 
-        assert gw is not None
-        jdstreams = gw.new_array(cls, len(dstreams))
+        jdstreams = bridge.new_array(cls_name, len(dstreams))
         for i in range(0, len(dstreams)):
-            jdstreams[i] = dstreams[i]._jdstream
+            bridge.array_set(jdstreams, i, dstreams[i]._jdstream)
         return DStream(
             self._jssc.union(jdstreams),
             self,
