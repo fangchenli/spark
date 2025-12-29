@@ -53,7 +53,7 @@ from pyspark.accumulators import Accumulator
 from pyspark.core.broadcast import Broadcast, BroadcastPickleRegistry
 from pyspark.core.files import SparkFiles
 from pyspark.java_gateway import launch_gateway
-from pyspark.jvm_bridge import create_bridge_from_gateway, get_bridge
+from pyspark.jvm_bridge import BridgeAdapter, create_bridge_from_gateway, get_bridge
 from pyspark.serializers import (
     CPickleSerializer,
     BatchedSerializer,
@@ -80,6 +80,13 @@ if TYPE_CHECKING:
     from pyspark.sql.types import DataType, StructType
 
 __all__ = ["SparkContext"]
+
+
+class _ClassProperty(property):
+    """Class property descriptor for SparkContext._jvm backward compatibility."""
+
+    def __get__(self, obj: Any, objtype: Optional[type] = None) -> Any:
+        return super().__get__(objtype)
 
 
 # These are special default configs for PySpark, they will overwrite
@@ -159,7 +166,7 @@ class SparkContext:
     """
 
     _gateway: ClassVar[Optional[JavaGateway]] = None
-    _jvm: ClassVar[Optional[JVMView]] = None
+    _bridge: ClassVar[Optional[BridgeAdapter]] = None
     _next_accum_id = 0
     _active_spark_context: ClassVar[Optional["SparkContext"]] = None
     _lock = RLock()
@@ -170,6 +177,17 @@ class SparkContext:
     profiler_collector: ProfilerCollector
 
     PACKAGE_EXTENSIONS: Iterable[str] = (".zip", ".egg", ".jar")
+
+    @_ClassProperty
+    def _jvm(cls) -> Optional[JVMView]:
+        """Get the JVM view for backward compatibility.
+
+        .. deprecated::
+            Use get_bridge().jvm or SparkContext._bridge.jvm instead.
+        """
+        if cls._bridge is not None:
+            return cls._bridge.jvm
+        return None
 
     def __init__(
         self,
@@ -248,7 +266,7 @@ class SparkContext:
             # created and then stopped, and we create a new SparkConf and new SparkContext again)
             self._conf = conf
         else:
-            self._conf = SparkConf(_jvm=SparkContext._jvm)
+            self._conf = SparkConf()
             if conf is not None:
                 for k, v in conf.getAll():
                     self._conf.set(k, v)
@@ -472,9 +490,8 @@ class SparkContext:
         with SparkContext._lock:
             if not SparkContext._gateway:
                 SparkContext._gateway = gateway or launch_gateway(conf)
-                SparkContext._jvm = SparkContext._gateway.jvm
                 # Initialize the JVM bridge singleton
-                create_bridge_from_gateway(SparkContext._gateway)
+                SparkContext._bridge = create_bridge_from_gateway(SparkContext._gateway)
 
             if instance:
                 if (
@@ -1784,23 +1801,15 @@ class SparkContext:
         first_jrdd_deserializer = rdds[0]._jrdd_deserializer
         if any(x._jrdd_deserializer != first_jrdd_deserializer for x in rdds):
             rdds = [x._reserialize() for x in rdds]
-        jvm = SparkContext._jvm
-        assert jvm is not None
         bridge = get_bridge()
-        jrdd_cls = getattr(jvm, "org.apache.spark.api.java.JavaRDD")
-        jpair_rdd_cls = getattr(jvm, "org.apache.spark.api.java.JavaPairRDD")
-        jdouble_rdd_cls = getattr(jvm, "org.apache.spark.api.java.JavaDoubleRDD")
         if bridge.is_instance_of(rdds[0]._jrdd, "org.apache.spark.api.java.JavaRDD"):
-            cls = jrdd_cls
             cls_name = "org.apache.spark.api.java.JavaRDD"
         elif bridge.is_instance_of(rdds[0]._jrdd, "org.apache.spark.api.java.JavaPairRDD"):
-            cls = jpair_rdd_cls
             cls_name = "org.apache.spark.api.java.JavaPairRDD"
         elif bridge.is_instance_of(rdds[0]._jrdd, "org.apache.spark.api.java.JavaDoubleRDD"):
-            cls = jdouble_rdd_cls
             cls_name = "org.apache.spark.api.java.JavaDoubleRDD"
         else:
-            cls_name = rdds[0]._jrdd.getClass().getCanonicalName()
+            cls_name = bridge.call(bridge.call(rdds[0]._jrdd, "getClass"), "getCanonicalName")
             raise TypeError("Unsupported Java RDD class %s" % cls_name)
         jrdds = bridge.new_array(cls_name, len(rdds))
         for i in range(0, len(rdds)):

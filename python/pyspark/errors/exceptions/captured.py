@@ -65,11 +65,13 @@ class CapturedException(PySparkException):
         self._desc = desc if desc is not None else cast(Py4JJavaError, origin).getMessage()
         if self._desc is None:
             self._desc = ""
-        assert SparkContext._jvm is not None
+        from pyspark.jvm_bridge import get_bridge
+
+        bridge = get_bridge()
         self._stackTrace = (
             stackTrace
             if stackTrace is not None
-            else (getattr(SparkContext._jvm, "org.apache.spark.util.Utils").exceptionString(origin))
+            else bridge.call_static("org.apache.spark.util.Utils", "exceptionString", origin)
         )
         self._cause = convert_exception(cause) if cause is not None else None
         if self._cause is None and origin is not None and origin.getCause() is not None:
@@ -78,17 +80,15 @@ class CapturedException(PySparkException):
         self._log_exception()
 
     def __str__(self) -> str:
-        from pyspark import SparkContext
+        from pyspark.jvm_bridge import get_bridge
 
-        assert SparkContext._jvm is not None
-
-        jvm = SparkContext._jvm
+        bridge = get_bridge()
 
         # SPARK-42752: default to True to see issues with initialization
         debug_enabled = True
         try:
-            sql_conf = getattr(jvm, "org.apache.spark.sql.internal.SQLConf").get()
-            debug_enabled = sql_conf.pysparkJVMStacktraceEnabled()
+            sql_conf = bridge.call_static("org.apache.spark.sql.internal.SQLConf", "get")
+            debug_enabled = bridge.call(sql_conf, "pysparkJVMStacktraceEnabled")
         except BaseException:
             pass
 
@@ -198,13 +198,10 @@ def convert_exception(e: "Py4JJavaError") -> CapturedException:
 
 
 def _convert_exception(e: "Py4JJavaError") -> CapturedException:
-    from pyspark import SparkContext
     from pyspark.jvm_bridge import get_bridge
 
     assert e is not None
-    assert SparkContext._jvm is not None
 
-    jvm = SparkContext._jvm
     bridge = get_bridge()
 
     if bridge.is_instance_of(e, "org.apache.spark.sql.catalyst.parser.ParseException"):
@@ -237,7 +234,7 @@ def _convert_exception(e: "Py4JJavaError") -> CapturedException:
         return SparkNoSuchElementException(origin=e)
 
     c: "Py4JJavaError" = e.getCause()
-    stacktrace: str = getattr(jvm, "org.apache.spark.util.Utils").exceptionString(e)
+    stacktrace: str = bridge.call_static("org.apache.spark.util.Utils", "exceptionString", e)
     if c is not None and (
         bridge.is_instance_of(c, "org.apache.spark.api.python.PythonException")
         # To make sure this only catches Python UDFs.

@@ -116,24 +116,26 @@ class SparkConf:
     def __init__(
         self,
         loadDefaults: bool = True,
-        _jvm: Optional["JVMView"] = None,
+        _jvm: Optional["JVMView"] = None,  # Deprecated, will be removed in future
         _jconf: Optional["JavaObject"] = None,
     ):
         """
         Create a new Spark configuration.
         """
+        # Note: _jvm parameter is deprecated and no longer used.
+        # SparkConf now uses SparkContext._bridge directly.
         if _jconf:
             self._jconf = _jconf
         else:
-            jvm = None
+            bridge = None
             if not is_remote_only():
                 from pyspark.core.context import SparkContext
 
-                jvm = _jvm or SparkContext._jvm
+                bridge = SparkContext._bridge
 
-            if jvm is not None:
+            if bridge is not None:
                 # JVM is created, so create self._jconf directly through JVM
-                self._jconf = jvm.SparkConf(loadDefaults)
+                self._jconf = bridge.new("org.apache.spark.SparkConf", loadDefaults)
                 self._conf = None
             else:
                 # JVM is not created, so store data in self._conf first
