@@ -77,13 +77,15 @@ class JavaWrapper:
     @try_remote_call
     def _call_java(self, name: str, *args: Any) -> Any:
         from pyspark.core.context import SparkContext
+        from pyspark.jvm_bridge import get_bridge
 
-        m = getattr(self._java_obj, name)
         sc = SparkContext._active_spark_context
         assert sc is not None
 
+        bridge = get_bridge()
         java_args = [_py2java(sc, arg) for arg in args]
-        return _java2py(sc, m(*java_args))
+        result = bridge.call(self._java_obj, name, *java_args)
+        return _java2py(sc, result)
 
     @staticmethod
     @try_remote_return_java_class
@@ -92,15 +94,14 @@ class JavaWrapper:
         Returns a new Java object.
         """
         from pyspark.core.context import SparkContext
+        from pyspark.jvm_bridge import get_bridge
 
         sc = SparkContext._active_spark_context
         assert sc is not None
 
-        java_obj = _jvm()
-        for name in java_class.split("."):
-            java_obj = getattr(java_obj, name)
+        bridge = get_bridge()
         java_args = [_py2java(sc, arg) for arg in args]
-        return java_obj(*java_args)
+        return bridge.new(java_class, *java_args)
 
     @staticmethod
     def _new_java_array(pylist: List[Any], java_class: str) -> "JavaObject":

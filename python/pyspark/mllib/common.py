@@ -175,7 +175,12 @@ class JavaModelWrapper:
 
     def call(self, name: str, *a: Any) -> Any:
         """Call method of java_model"""
-        return callJavaFunc(self._sc, getattr(self._java_model, name), *a)
+        from pyspark.jvm_bridge import get_bridge
+
+        bridge = get_bridge()
+        java_args = [_py2java(self._sc, arg) for arg in a]
+        result = bridge.call(self._java_model, name, *java_args)
+        return _java2py(self._sc, result)
 
 
 def inherit_doc(cls: "C") -> "C":
