@@ -319,28 +319,40 @@ class SparkContext:
         if is_unix_domain_sock:
             socket_dir = self._conf.get("spark.python.unix.domain.socket.dir")
             if socket_dir is None:
-                socket_dir = getattr(self._jvm, "java.lang.System").getProperty("java.io.tmpdir")
+                bridge = get_bridge()
+                socket_dir = bridge.call_static("java.lang.System", "getProperty", "java.io.tmpdir")
             socket_path = os.path.join(socket_dir, f".{uuid.uuid4()}.sock")
         start_update_server = accumulators._start_update_server
         self._accumulatorServer = start_update_server(auth_token, is_unix_domain_sock, socket_path)
-        assert self._jvm is not None
+        bridge = get_bridge()
         if is_unix_domain_sock:
-            self._javaAccumulator = self._jvm.PythonAccumulatorV2(
-                self._accumulatorServer.server_address
+            self._javaAccumulator = bridge.new(
+                "org.apache.spark.api.python.PythonAccumulatorV2",
+                self._accumulatorServer.server_address,
             )
         else:
             (host, port) = self._accumulatorServer.server_address  # type: ignore[misc]
-            self._javaAccumulator = self._jvm.PythonAccumulatorV2(host, port, auth_token)
-        self._jsc.sc().register(self._javaAccumulator)
+            self._javaAccumulator = bridge.new(
+                "org.apache.spark.api.python.PythonAccumulatorV2", host, port, auth_token
+            )
+        bridge.call(bridge.call(self._jsc, "sc"), "register", self._javaAccumulator)
 
         # If encryption is enabled, we need to setup a server in the jvm to read broadcast
         # data via a socket.
         # scala's mangled names w/ $ in them require special treatment.
-        self._encryption_enabled = self._jvm.PythonUtils.isEncryptionEnabled(self._jsc)
-        os.environ["SPARK_AUTH_SOCKET_TIMEOUT"] = str(
-            self._jvm.PythonUtils.getPythonAuthSocketTimeout(self._jsc)
+        self._encryption_enabled = bridge.call_static(
+            "org.apache.spark.api.python.PythonUtils", "isEncryptionEnabled", self._jsc
         )
-        os.environ["SPARK_BUFFER_SIZE"] = str(self._jvm.PythonUtils.getSparkBufferSize(self._jsc))
+        os.environ["SPARK_AUTH_SOCKET_TIMEOUT"] = str(
+            bridge.call_static(
+                "org.apache.spark.api.python.PythonUtils", "getPythonAuthSocketTimeout", self._jsc
+            )
+        )
+        os.environ["SPARK_BUFFER_SIZE"] = str(
+            bridge.call_static(
+                "org.apache.spark.api.python.PythonUtils", "getSparkBufferSize", self._jsc
+            )
+        )
 
         self.pythonExec = os.environ.get("PYSPARK_PYTHON", "python3")
         self.pythonVer = "%d.%d" % sys.version_info[:2]
@@ -383,15 +395,13 @@ class SparkContext:
                     )
 
         # Create a temporary directory inside spark.local.dir:
-        assert self._jvm is not None
-        local_dir = getattr(self._jvm, "org.apache.spark.util.Utils").getLocalDir(
-            self._jsc.sc().conf()
+        bridge = get_bridge()
+        sc_conf = bridge.call(bridge.call(self._jsc, "sc"), "conf")
+        local_dir = bridge.call_static("org.apache.spark.util.Utils", "getLocalDir", sc_conf)
+        temp_dir_file = bridge.call_static(
+            "org.apache.spark.util.Utils", "createTempDir", local_dir, "pyspark"
         )
-        self._temp_dir = (
-            getattr(self._jvm, "org.apache.spark.util.Utils")
-            .createTempDir(local_dir, "pyspark")
-            .getAbsolutePath()
-        )
+        self._temp_dir = bridge.call(temp_dir_file, "getAbsolutePath")
 
         # profiling stats collected for each PythonRDD
         if (
@@ -446,8 +456,7 @@ class SparkContext:
         """
         Initialize SparkContext in function to allow subclass specific initialization
         """
-        assert self._jvm is not None
-        return self._jvm.JavaSparkContext(jconf)
+        return get_bridge().new("org.apache.spark.api.java.JavaSparkContext", jconf)
 
     @classmethod
     def _ensure_initialized(
@@ -581,8 +590,7 @@ class SparkContext:
             The value of a new Java system property.
         """
         SparkContext._ensure_initialized()
-        assert SparkContext._jvm is not None
-        getattr(SparkContext._jvm, "java.lang.System").setProperty(key, value)
+        get_bridge().call_static("java.lang.System", "setProperty", key, value)
 
     @classmethod
     def getSystemProperty(cls, key: str) -> str:
@@ -603,8 +611,7 @@ class SparkContext:
         >>> _ = sc.getSystemProperty("java.home")
         """
         SparkContext._ensure_initialized()
-        assert SparkContext._jvm is not None
-        return getattr(SparkContext._jvm, "java.lang.System").getProperty(key)
+        return get_bridge().call_static("java.lang.System", "getProperty", key)
 
     @property
     def version(self) -> str:
@@ -867,12 +874,20 @@ class SparkContext:
         serializer = BatchedSerializer(self._unbatched_serializer, batchSize)
 
         def reader_func(temp_filename: str) -> JavaObject:
-            assert self._jvm is not None
-            return self._jvm.PythonRDD.readRDDFromFile(self._jsc, temp_filename, numSlices)
+            return get_bridge().call_static(
+                "org.apache.spark.api.python.PythonRDD",
+                "readRDDFromFile",
+                self._jsc,
+                temp_filename,
+                numSlices,
+            )
 
         def createRDDServer() -> JavaObject:
-            assert self._jvm is not None
-            return self._jvm.PythonParallelizeServer(self._jsc.sc(), numSlices)
+            bridge = get_bridge()
+            sc = bridge.call(self._jsc, "sc")
+            return bridge.new(
+                "org.apache.spark.api.python.PythonParallelizeServer", sc, numSlices
+            )
 
         jrdd = self._serialize_to_jvm(c, serializer, reader_func, createRDDServer)
         return RDD(jrdd, self, serializer)
@@ -1228,12 +1243,12 @@ class SparkContext:
         return RDD(self._jsc.binaryRecords(path, recordLength), self, NoOpSerializer())
 
     def _dictToJavaMap(self, d: Optional[Dict[str, str]]) -> JavaMap:
-        assert self._jvm is not None
-        jm = getattr(self._jvm, "java.util.HashMap")()
+        bridge = get_bridge()
+        jm = bridge.new("java.util.HashMap")
         if not d:
             d = {}
         for k, v in d.items():
-            jm[k] = v
+            bridge.call(jm, "put", k, v)
         return jm
 
     def sequenceFile(
@@ -1313,8 +1328,9 @@ class SparkContext:
         [(1, {3.0: 'bb'}), (2, {1.0: 'aa'}), (3, {2.0: 'dd'})]
         """
         minSplits = minSplits or min(self.defaultParallelism, 2)
-        assert self._jvm is not None
-        jrdd = self._jvm.PythonRDD.sequenceFile(
+        jrdd = get_bridge().call_static(
+            "org.apache.spark.api.python.PythonRDD",
+            "sequenceFile",
             self._jsc,
             path,
             keyClass,
@@ -1412,8 +1428,9 @@ class SparkContext:
         [(1, ''), (1, 'a'), (3, 'x')]
         """
         jconf = self._dictToJavaMap(conf)
-        assert self._jvm is not None
-        jrdd = self._jvm.PythonRDD.newAPIHadoopFile(
+        jrdd = get_bridge().call_static(
+            "org.apache.spark.api.python.PythonRDD",
+            "newAPIHadoopFile",
             self._jsc,
             path,
             inputFormatClass,
@@ -1516,8 +1533,9 @@ class SparkContext:
         [(1, ''), (1, 'a'), (3, 'x')]
         """
         jconf = self._dictToJavaMap(conf)
-        assert self._jvm is not None
-        jrdd = self._jvm.PythonRDD.newAPIHadoopRDD(
+        jrdd = get_bridge().call_static(
+            "org.apache.spark.api.python.PythonRDD",
+            "newAPIHadoopRDD",
             self._jsc,
             inputFormatClass,
             keyClass,
@@ -1611,8 +1629,9 @@ class SparkContext:
         [(0, '1\\t'), (0, '1\\ta'), (0, '3\\tx')]
         """
         jconf = self._dictToJavaMap(conf)
-        assert self._jvm is not None
-        jrdd = self._jvm.PythonRDD.hadoopFile(
+        jrdd = get_bridge().call_static(
+            "org.apache.spark.api.python.PythonRDD",
+            "hadoopFile",
             self._jsc,
             path,
             inputFormatClass,
@@ -1712,8 +1731,9 @@ class SparkContext:
         [(0, '1\\t'), (0, '1\\ta'), (0, '3\\tx')]
         """
         jconf = self._dictToJavaMap(conf)
-        assert self._jvm is not None
-        jrdd = self._jvm.PythonRDD.hadoopRDD(
+        jrdd = get_bridge().call_static(
+            "org.apache.spark.api.python.PythonRDD",
+            "hadoopRDD",
             self._jsc,
             inputFormatClass,
             keyClass,
@@ -1962,11 +1982,13 @@ class SparkContext:
         --------
         :meth:`SparkContext.addFile`
         """
-        return list(
-            getattr(self._jvm, "scala.jdk.javaapi.CollectionConverters").asJava(
-                self._jsc.sc().listFiles()
-            )
+        bridge = get_bridge()
+        sc = bridge.call(self._jsc, "sc")
+        scala_list = bridge.call(sc, "listFiles")
+        java_list = bridge.call_static(
+            "scala.jdk.javaapi.CollectionConverters", "asJava", scala_list
         )
+        return list(java_list)
 
     def addPyFile(self, path: str) -> None:
         """
@@ -2090,11 +2112,13 @@ class SparkContext:
         --------
         :meth:`SparkContext.addArchive`
         """
-        return list(
-            getattr(self._jvm, "scala.jdk.javaapi.CollectionConverters").asJava(
-                self._jsc.sc().listArchives()
-            )
+        bridge = get_bridge()
+        sc = bridge.call(self._jsc, "sc")
+        scala_list = bridge.call(sc, "listArchives")
+        java_list = bridge.call_static(
+            "scala.jdk.javaapi.CollectionConverters", "asJava", scala_list
         )
+        return list(java_list)
 
     def setCheckpointDir(self, dirName: str) -> None:
         """
@@ -2140,9 +2164,8 @@ class SparkContext:
         """
         if not isinstance(storageLevel, StorageLevel):
             raise TypeError("storageLevel must be of type pyspark.StorageLevel")
-        assert self._jvm is not None
-        newStorageLevel = getattr(self._jvm, "org.apache.spark.storage.StorageLevel")
-        return newStorageLevel(
+        return get_bridge().new(
+            "org.apache.spark.storage.StorageLevel",
             storageLevel.useDisk,
             storageLevel.useMemory,
             storageLevel.useOffHeap,
@@ -2572,8 +2595,11 @@ class SparkContext:
         # by runJob() in order to avoid having to pass a Python lambda into
         # SparkContext#runJob.
         mappedRDD = rdd.mapPartitions(partitionFunc)
-        assert self._jvm is not None
-        sock_info = self._jvm.PythonRDD.runJob(self._jsc.sc(), mappedRDD._jrdd, partitions)
+        bridge = get_bridge()
+        sc = bridge.call(self._jsc, "sc")
+        sock_info = bridge.call_static(
+            "org.apache.spark.api.python.PythonRDD", "runJob", sc, mappedRDD._jrdd, partitions
+        )
         with _load_from_socket(sock_info, mappedRDD._jrdd_deserializer) as stream:
             return list(stream)
 
@@ -2651,14 +2677,17 @@ class SparkContext:
             )
 
     def _to_ddl(self, struct: "StructType") -> str:
-        assert self._jvm is not None
-        return self._jvm.PythonSQLUtils.jsonToDDL(struct.json())
+        return get_bridge().call_static(
+            "org.apache.spark.sql.api.python.PythonSQLUtils", "jsonToDDL", struct.json()
+        )
 
     def _parse_ddl(self, ddl: str) -> "DataType":
         from pyspark.sql.types import _parse_datatype_json_string
 
-        assert self._jvm is not None
-        return _parse_datatype_json_string(self._jvm.PythonSQLUtils.ddlToJson(ddl))
+        ddl_json = get_bridge().call_static(
+            "org.apache.spark.sql.api.python.PythonSQLUtils", "ddlToJson", ddl
+        )
+        return _parse_datatype_json_string(ddl_json)
 
 
 def _test() -> None:

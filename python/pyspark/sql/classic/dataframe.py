@@ -265,8 +265,18 @@ class DataFrame(ParentDataFrame, PandasMapOpsMixin, PandasConversionMixin):
             explain_mode = cast(str, mode)
         elif is_extended_as_mode:
             explain_mode = cast(str, extended)
-        assert self._sc._jvm is not None
-        print(self._sc._jvm.PythonSQLUtils.explainString(self._jdf.queryExecution(), explain_mode))
+        from pyspark.jvm_bridge import get_bridge
+
+        bridge = get_bridge()
+        query_execution = bridge.call(self._jdf, "queryExecution")
+        print(
+            bridge.call_static(
+                "org.apache.spark.sql.api.python.PythonSQLUtils",
+                "explainString",
+                query_execution,
+                explain_mode,
+            )
+        )
 
     def exceptAll(self, other: ParentDataFrame) -> ParentDataFrame:
         return DataFrame(self._jdf.exceptAll(other._jdf), self.sparkSession)

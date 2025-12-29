@@ -37,6 +37,7 @@ from typing import (
     Union,
 )
 
+from pyspark.jvm_bridge import get_bridge
 from pyspark.serializers import ChunkedStream, pickle_protocol
 from pyspark.util import print_exec, local_connect_and_auth
 from pyspark.errors import PySparkRuntimeError
@@ -119,8 +120,9 @@ class Broadcast(Generic[T]):
             f = NamedTemporaryFile(delete=False, dir=sc._temp_dir)
             self._path = f.name
             self._sc: Optional["SparkContext"] = sc
-            assert sc._jvm is not None
-            self._python_broadcast = sc._jvm.PythonRDD.setupBroadcast(self._path)
+            self._python_broadcast = get_bridge().call_static(
+                "org.apache.spark.api.python.PythonRDD", "setupBroadcast", self._path
+            )
             broadcast_out: Union[ChunkedStream, IO[bytes]]
             if sc._encryption_enabled:
                 # with encryption, we ask the jvm to do the encryption for us, we send it data

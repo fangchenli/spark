@@ -21,6 +21,7 @@ from abc import ABC, abstractmethod
 
 from pyspark.sql import Row
 from pyspark import cloudpickle
+from pyspark.jvm_bridge import get_bridge
 
 __all__ = ["StreamingQueryListener"]
 
@@ -129,15 +130,14 @@ class StreamingQueryListener(ABC):
 
     @property
     def _jlistener(self) -> "JavaObject":
-        from pyspark import SparkContext
+        from pyspark.jvm_bridge import get_bridge
 
         if hasattr(self, "_jlistenerobj"):
             return self._jlistenerobj
 
-        self._jlistenerobj: "JavaObject" = (
-            SparkContext._jvm.PythonStreamingQueryListenerWrapper(  # type: ignore[union-attr]
-                JStreamingQueryListener(self)
-            )
+        self._jlistenerobj: "JavaObject" = get_bridge().new(
+            "org.apache.spark.sql.api.python.PythonStreamingQueryListenerWrapper",
+            JStreamingQueryListener(self),
         )
         return self._jlistenerobj
 
@@ -473,8 +473,6 @@ class StreamingQueryProgress(dict):
 
     @classmethod
     def fromJObject(cls, jprogress: "JavaObject") -> "StreamingQueryProgress":
-        from pyspark import SparkContext
-
         return cls(
             jprogress=jprogress,
             id=uuid.UUID(jprogress.id().toString()),
@@ -495,7 +493,9 @@ class StreamingQueryProgress(dict):
             processedRowsPerSecond=jprogress.processedRowsPerSecond(),
             observedMetrics={
                 k: cloudpickle.loads(
-                    SparkContext._jvm.PythonSQLUtils.toPyRow(jr)  # type: ignore[union-attr]
+                    get_bridge().call_static(
+                        "org.apache.spark.sql.api.python.PythonSQLUtils", "toPyRow", jr
+                    )
                 )
                 for k, jr in dict(jprogress.observedMetrics()).items()
             },

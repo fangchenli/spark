@@ -258,14 +258,19 @@ def eventually(
 
 class QuietTest:
     def __init__(self, sc):
-        self.log4j = sc._jvm.org.apache.log4j
+        from pyspark.jvm_bridge import get_bridge
+
+        self.bridge = get_bridge()
 
     def __enter__(self):
-        self.old_level = self.log4j.LogManager.getRootLogger().getLevel()
-        self.log4j.LogManager.getRootLogger().setLevel(self.log4j.Level.FATAL)
+        log_manager = self.bridge.call_static("org.apache.log4j.LogManager", "getRootLogger")
+        self.old_level = self.bridge.call(log_manager, "getLevel")
+        fatal_level = self.bridge.get_static_field("org.apache.log4j.Level", "FATAL")
+        self.bridge.call(log_manager, "setLevel", fatal_level)
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        self.log4j.LogManager.getRootLogger().setLevel(self.old_level)
+        log_manager = self.bridge.call_static("org.apache.log4j.LogManager", "getRootLogger")
+        self.bridge.call(log_manager, "setLevel", self.old_level)
 
 
 class PySparkTestCase(unittest.TestCase):

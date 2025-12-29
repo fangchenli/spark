@@ -72,9 +72,12 @@ class PySparkStreamingTestCase(unittest.TestCase):
         cls.sc.stop()
         # Clean up in the JVM just in case there has been some issues in Python API
         try:
-            jSparkContextOption = SparkContext._jvm.SparkContext.get()
+            from pyspark.jvm_bridge import get_bridge
+
+            bridge = get_bridge()
+            jSparkContextOption = bridge.call_static("org.apache.spark.SparkContext", "get")
             if jSparkContextOption.nonEmpty():
-                jSparkContextOption.get().stop()
+                bridge.call(jSparkContextOption.get(), "stop")
         except BaseException:
             pass
 
@@ -86,9 +89,14 @@ class PySparkStreamingTestCase(unittest.TestCase):
             self.ssc.stop(False)
         # Clean up in the JVM just in case there has been some issues in Python API
         try:
-            jStreamingContextOption = StreamingContext._jvm.SparkContext.getActive()
+            from pyspark.jvm_bridge import get_bridge
+
+            bridge = get_bridge()
+            jStreamingContextOption = bridge.call_static(
+                "org.apache.spark.streaming.StreamingContext", "getActive"
+            )
             if jStreamingContextOption.nonEmpty():
-                jStreamingContextOption.get().stop(False)
+                bridge.call(jStreamingContextOption.get(), "stop", False)
         except BaseException:
             pass
 

@@ -438,6 +438,9 @@ class UserDefinedTableFunction:
                 jargs.append(_to_java_column(arg))  # type: ignore[arg-type]
 
         # Process keyword arguments
+        from pyspark.jvm_bridge import get_bridge
+
+        bridge = get_bridge()
         jkwargs = []
         for key, value in kwargs.items():
             if isinstance(value, TableArg):
@@ -447,7 +450,12 @@ class UserDefinedTableFunction:
                 # Otherwise, convert it to a Java column
                 j_arg = _to_java_column(value)  # type: ignore[arg-type]
             # Create a named argument expression
-            j_named_arg = sc._jvm.PythonSQLUtils.namedArgumentExpression(key, j_arg)
+            j_named_arg = bridge.call_static(
+                "org.apache.spark.sql.api.python.PythonSQLUtils",
+                "namedArgumentExpression",
+                key,
+                j_arg,
+            )
             jkwargs.append(j_named_arg)
 
         judtf = self._judtf

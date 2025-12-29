@@ -897,22 +897,34 @@ class SparkConversionMixin:
             for pdf_slice in pdf_slices
         ]
 
+        from pyspark.jvm_bridge import get_bridge
+
         jsparkSession = self._jsparkSession
+        bridge = get_bridge()
 
         ser = ArrowStreamPandasSerializer(timezone, safecheck, False)
 
         @no_type_check
         def reader_func(temp_filename):
-            return self._jvm.PythonSQLUtils.readArrowStreamFromFile(temp_filename)
+            return bridge.call_static(
+                "org.apache.spark.sql.api.python.PythonSQLUtils",
+                "readArrowStreamFromFile",
+                temp_filename,
+            )
 
         @no_type_check
         def create_iter_server():
-            return self._jvm.ArrowIteratorServer()
+            return bridge.new("org.apache.spark.sql.api.python.ArrowIteratorServer")
 
         # Create Spark DataFrame from Arrow stream file, using one batch per partition
         jiter = self._sc._serialize_to_jvm(arrow_data, ser, reader_func, create_iter_server)
-        assert self._jvm is not None
-        jdf = self._jvm.PythonSQLUtils.toDataFrame(jiter, schema.json(), jsparkSession)
+        jdf = bridge.call_static(
+            "org.apache.spark.sql.api.python.PythonSQLUtils",
+            "toDataFrame",
+            jiter,
+            schema.json(),
+            jsparkSession,
+        )
         df = DataFrame(jdf, self)
         df._schema = schema
         return df
@@ -976,20 +988,32 @@ class SparkConversionMixin:
 
         jsparkSession = self._jsparkSession
 
+        from pyspark.jvm_bridge import get_bridge
+
+        bridge = get_bridge()
         ser = ArrowStreamSerializer()
 
         @no_type_check
         def reader_func(temp_filename):
-            return self._jvm.PythonSQLUtils.readArrowStreamFromFile(temp_filename)
+            return bridge.call_static(
+                "org.apache.spark.sql.api.python.PythonSQLUtils",
+                "readArrowStreamFromFile",
+                temp_filename,
+            )
 
         @no_type_check
         def create_iter_server():
-            return self._jvm.ArrowIteratorServer()
+            return bridge.new("org.apache.spark.sql.api.python.ArrowIteratorServer")
 
         # Create Spark DataFrame from Arrow stream file, using one batch per partition
         jiter = self._sc._serialize_to_jvm(arrow_data, ser, reader_func, create_iter_server)
-        assert self._jvm is not None
-        jdf = self._jvm.PythonSQLUtils.toDataFrame(jiter, schema.json(), jsparkSession)
+        jdf = bridge.call_static(
+            "org.apache.spark.sql.api.python.PythonSQLUtils",
+            "toDataFrame",
+            jiter,
+            schema.json(),
+            jsparkSession,
+        )
         df = DataFrame(jdf, self)
         df._schema = schema
         return df

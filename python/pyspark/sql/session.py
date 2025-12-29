@@ -1264,10 +1264,11 @@ class SparkSession(SparkConversionMixin):
 
         try:
             # Try to access HiveConf, it will raise exception if Hive is not added
+            from pyspark.jvm_bridge import get_bridge
+
             conf = SparkConf()
-            assert SparkContext._jvm is not None
             if conf.get("spark.sql.catalogImplementation", "hive").lower() == "hive":
-                SparkContext._jvm.org.apache.hadoop.hive.conf.HiveConf()
+                get_bridge().new("org.apache.hadoop.hive.conf.HiveConf")
                 return SparkSession.builder.enableHiveSupport().getOrCreate()
             else:
                 return SparkSession._getActiveSessionOrCreate()
@@ -1679,9 +1680,15 @@ class SparkSession(SparkConversionMixin):
             rdd, struct = self._createFromLocal(
                 map(prepare, data), schema  # type: ignore[arg-type]
             )
-        assert self._jvm is not None
-        jrdd = self._jvm.SerDeUtil.toJavaArray(rdd._to_java_object_rdd())
-        jdf = self._jsparkSession.applySchemaToPythonRDD(jrdd.rdd(), struct.json())
+        from pyspark.jvm_bridge import get_bridge
+
+        bridge = get_bridge()
+        jrdd = bridge.call_static(
+            "org.apache.spark.api.python.SerDeUtil",
+            "toJavaArray",
+            rdd._to_java_object_rdd(),
+        )
+        jdf = self._jsparkSession.applySchemaToPythonRDD(bridge.call(jrdd, "rdd"), struct.json())
         df = DataFrame(jdf, self)
         df._schema = struct
         return df
@@ -1826,6 +1833,7 @@ class SparkSession(SparkConversionMixin):
         +---+---+---+
         """
         from pyspark.sql.classic.column import _to_java_column
+        from pyspark.jvm_bridge import get_bridge
 
         formatter = SQLStringFormatter(self)
         if len(kwargs) > 0:
@@ -1834,9 +1842,10 @@ class SparkSession(SparkConversionMixin):
             if isinstance(args, Dict):
                 litArgs = {k: _to_java_column(lit(v)) for k, v in (args or {}).items()}
             elif args is None or isinstance(args, List):
-                assert self._jvm is not None
-                litArgs = self._jvm.PythonUtils.toArray(
-                    [_to_java_column(lit(v)) for v in (args or [])]
+                litArgs = get_bridge().call_static(
+                    "org.apache.spark.api.python.PythonUtils",
+                    "toArray",
+                    [_to_java_column(lit(v)) for v in (args or [])],
                 )
             else:
                 raise PySparkTypeError(

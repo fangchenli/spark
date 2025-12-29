@@ -359,10 +359,12 @@ class KMeansModel(Saveable, Loader["KMeansModel"]):
         """
         Save this model to the given path.
         """
-        assert sc._jvm is not None
+        from pyspark.jvm_bridge import get_bridge
 
         java_centers = _py2java(sc, [_convert_to_vector(c) for c in self.centers])
-        java_model = sc._jvm.org.apache.spark.mllib.clustering.KMeansModel(java_centers)
+        java_model = get_bridge().new(
+            "org.apache.spark.mllib.clustering.KMeansModel", java_centers
+        )
         java_model.save(sc._jsc.sc(), path)
 
     @classmethod
@@ -371,9 +373,11 @@ class KMeansModel(Saveable, Loader["KMeansModel"]):
         """
         Load a model from the given path.
         """
-        assert sc._jvm is not None
+        from pyspark.jvm_bridge import get_bridge
 
-        java_model = sc._jvm.org.apache.spark.mllib.clustering.KMeansModel.load(sc._jsc.sc(), path)
+        java_model = get_bridge().call_static(
+            "org.apache.spark.mllib.clustering.KMeansModel", "load", sc._jsc.sc(), path
+        )
         return KMeansModel(_java2py(sc, java_model.clusterCenters()))
 
 
@@ -643,10 +647,12 @@ class GaussianMixtureModel(JavaModelWrapper, JavaSaveable, JavaLoader["GaussianM
         path : str
             Path to where the model is stored.
         """
-        assert sc._jvm is not None
+        from pyspark.jvm_bridge import get_bridge
 
         model = cls._load_java(sc, path)
-        wrapper = sc._jvm.org.apache.spark.mllib.api.python.GaussianMixtureModelWrapper(model)
+        wrapper = get_bridge().new(
+            "org.apache.spark.mllib.api.python.GaussianMixtureModelWrapper", model
+        )
         return cls(wrapper)
 
 
@@ -799,11 +805,11 @@ class PowerIterationClusteringModel(
         """
         Load a model from the given path.
         """
-        assert sc._jvm is not None
+        from pyspark.jvm_bridge import get_bridge
 
         model = cls._load_java(sc, path)
-        wrapper = sc._jvm.org.apache.spark.mllib.api.python.PowerIterationClusteringModelWrapper(
-            model
+        wrapper = get_bridge().new(
+            "org.apache.spark.mllib.api.python.PowerIterationClusteringModelWrapper", model
         )
         return PowerIterationClusteringModel(wrapper)
 

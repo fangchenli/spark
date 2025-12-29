@@ -289,10 +289,14 @@ class LogisticRegressionModel(LinearClassificationModel):
         """
         Save this model to the given path.
         """
-        assert sc._jvm is not None
+        from pyspark.jvm_bridge import get_bridge
 
-        java_model = sc._jvm.org.apache.spark.mllib.classification.LogisticRegressionModel(
-            _py2java(sc, self._coeff), self.intercept, self.numFeatures, self.numClasses
+        java_model = get_bridge().new(
+            "org.apache.spark.mllib.classification.LogisticRegressionModel",
+            _py2java(sc, self._coeff),
+            self.intercept,
+            self.numFeatures,
+            self.numClasses,
         )
         java_model.save(sc._jsc.sc(), path)
 
@@ -302,10 +306,13 @@ class LogisticRegressionModel(LinearClassificationModel):
         """
         Load a model from the given path.
         """
-        assert sc._jvm is not None
+        from pyspark.jvm_bridge import get_bridge
 
-        java_model = sc._jvm.org.apache.spark.mllib.classification.LogisticRegressionModel.load(
-            sc._jsc.sc(), path
+        java_model = get_bridge().call_static(
+            "org.apache.spark.mllib.classification.LogisticRegressionModel",
+            "load",
+            sc._jsc.sc(),
+            path,
         )
         weights = _java2py(sc, java_model.weights())
         intercept = java_model.intercept()
@@ -619,10 +626,12 @@ class SVMModel(LinearClassificationModel):
         """
         Save this model to the given path.
         """
-        assert sc._jvm is not None
+        from pyspark.jvm_bridge import get_bridge
 
-        java_model = sc._jvm.org.apache.spark.mllib.classification.SVMModel(
-            _py2java(sc, self._coeff), self.intercept
+        java_model = get_bridge().new(
+            "org.apache.spark.mllib.classification.SVMModel",
+            _py2java(sc, self._coeff),
+            self.intercept,
         )
         java_model.save(sc._jsc.sc(), path)
 
@@ -632,9 +641,11 @@ class SVMModel(LinearClassificationModel):
         """
         Load a model from the given path.
         """
-        assert sc._jvm is not None
+        from pyspark.jvm_bridge import get_bridge
 
-        java_model = sc._jvm.org.apache.spark.mllib.classification.SVMModel.load(sc._jsc.sc(), path)
+        java_model = get_bridge().call_static(
+            "org.apache.spark.mllib.classification.SVMModel", "load", sc._jsc.sc(), path
+        )
         weights = _java2py(sc, java_model.weights())
         intercept = java_model.intercept()
         threshold = java_model.getThreshold().get()
@@ -819,13 +830,16 @@ class NaiveBayesModel(Saveable, Loader["NaiveBayesModel"]):
         """
         Save this model to the given path.
         """
-        assert sc._jvm is not None
+        from pyspark.jvm_bridge import get_bridge
 
         java_labels = _py2java(sc, self.labels.tolist())
         java_pi = _py2java(sc, self.pi.tolist())
         java_theta = _py2java(sc, self.theta.tolist())
-        java_model = sc._jvm.org.apache.spark.mllib.classification.NaiveBayesModel(
-            java_labels, java_pi, java_theta
+        java_model = get_bridge().new(
+            "org.apache.spark.mllib.classification.NaiveBayesModel",
+            java_labels,
+            java_pi,
+            java_theta,
         )
         java_model.save(sc._jsc.sc(), path)
 
@@ -835,10 +849,13 @@ class NaiveBayesModel(Saveable, Loader["NaiveBayesModel"]):
         """
         Load a model from the given path.
         """
-        assert sc._jvm is not None
+        from pyspark.jvm_bridge import get_bridge
 
-        java_model = sc._jvm.org.apache.spark.mllib.classification.NaiveBayesModel.load(
-            sc._jsc.sc(), path
+        java_model = get_bridge().call_static(
+            "org.apache.spark.mllib.classification.NaiveBayesModel",
+            "load",
+            sc._jsc.sc(),
+            path,
         )
         # Can not unpickle array.array from Pickle in Python3 with "bytes"
         py_labels = _java2py(sc, java_model.labels(), "latin1")

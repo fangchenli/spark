@@ -207,8 +207,13 @@ class ReusedConnectTestCase(unittest.TestCase, SQLTestUtils, PySparkErrorTestUti
     def tearDown(self):
         try:
             if self._legacy_sc is not None and self._client._server_session_id is not None:
-                self._legacy_sc._jvm.PythonSQLUtils.cleanupPythonWorkerLogs(
-                    self._client._server_session_id, self._legacy_sc._jsc.sc()
+                from pyspark.jvm_bridge import get_bridge
+
+                get_bridge().call_static(
+                    "org.apache.spark.sql.api.python.PythonSQLUtils",
+                    "cleanupPythonWorkerLogs",
+                    self._client._server_session_id,
+                    self._legacy_sc._jsc.sc(),
                 )
         finally:
             super().tearDown()

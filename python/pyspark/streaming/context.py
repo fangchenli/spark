@@ -81,15 +81,18 @@ class StreamingContext:
 
     def _initialize_context(self, sc: SparkContext, duration: Optional[int]) -> JavaObject:
         self._ensure_initialized()
-        assert self._jvm is not None and duration is not None
-        return self._jvm.JavaStreamingContext(sc._jsc, self._jduration(duration))
+        assert duration is not None
+        return get_bridge().new(
+            "org.apache.spark.streaming.api.java.JavaStreamingContext",
+            sc._jsc,
+            self._jduration(duration),
+        )
 
     def _jduration(self, seconds: int) -> JavaObject:
         """
         Create Duration object given number of seconds
         """
-        assert self._jvm is not None
-        return self._jvm.Duration(int(seconds * 1000))
+        return get_bridge().new("org.apache.spark.streaming.Duration", int(seconds * 1000))
 
     @classmethod
     def _ensure_initialized(cls) -> None:
@@ -170,12 +173,16 @@ class StreamingContext:
         if activePythonContext is not None:
             # Verify that the current running Java StreamingContext is active and is the same one
             # backing the supposedly active Python context
-            activePythonContextJavaId = activePythonContext._jssc.ssc().hashCode()
-            activeJvmContextOption = activePythonContext._jvm.StreamingContext.getActive()
+            bridge = get_bridge()
+            ssc = bridge.call(activePythonContext._jssc, "ssc")
+            activePythonContextJavaId = bridge.call(ssc, "hashCode")
+            activeJvmContextOption = bridge.call_static(
+                "org.apache.spark.streaming.StreamingContext", "getActive"
+            )
 
-            if activeJvmContextOption.isEmpty():
+            if bridge.call(activeJvmContextOption, "isEmpty"):
                 cls._activeContext = None
-            elif activeJvmContextOption.get().hashCode() != activePythonContextJavaId:
+            elif bridge.call(bridge.call(activeJvmContextOption, "get"), "hashCode") != activePythonContextJavaId:
                 cls._activeContext = None
                 raise RuntimeError(
                     "JVM's active JavaStreamingContext is not the JavaStreamingContext "
@@ -392,8 +399,11 @@ class StreamingContext:
             rdds = [self._sc.parallelize(input) for input in rdds]
         self._check_serializers(rdds)
 
-        assert self._jvm is not None
-        queue = self._jvm.PythonDStream.toRDDQueue([r._jrdd for r in rdds])
+        queue = get_bridge().call_static(
+            "org.apache.spark.streaming.api.python.PythonDStream",
+            "toRDDQueue",
+            [r._jrdd for r in rdds],
+        )
         if default:
             default = default._reserialize(rdds[0]._jrdd_deserializer)
             assert default is not None
@@ -419,9 +429,11 @@ class StreamingContext:
             *[d._jrdd_deserializer for d in dstreams],
         )
 
-        assert self._jvm is not None
-        jfunc = self._jvm.TransformFunction(func)
-        jdstream = self._jssc.transform(jdstreams, jfunc)
+        bridge = get_bridge()
+        jfunc = bridge.new(
+            "org.apache.spark.streaming.api.python.TransformFunction", func
+        )
+        jdstream = bridge.call(self._jssc, "transform", jdstreams, jfunc)
         return DStream(jdstream, self, self._sc.serializer)
 
     def union(self, *dstreams: "DStream[T]") -> "DStream[T]":
@@ -438,32 +450,28 @@ class StreamingContext:
         if len(set(s._slideDuration for s in dstreams)) > 1:
             raise ValueError("All DStreams should have same slide duration")
 
-        assert SparkContext._jvm is not None
         bridge = get_bridge()
-        jdstream_cls = SparkContext._jvm.org.apache.spark.streaming.api.java.JavaDStream
-        jpair_dstream_cls = SparkContext._jvm.org.apache.spark.streaming.api.java.JavaPairDStream
 
         if bridge.is_instance_of(
             dstreams[0]._jdstream,
             "org.apache.spark.streaming.api.java.JavaDStream"
         ):
-            cls = jdstream_cls
             cls_name = "org.apache.spark.streaming.api.java.JavaDStream"
         elif bridge.is_instance_of(
             dstreams[0]._jdstream,
             "org.apache.spark.streaming.api.java.JavaPairDStream"
         ):
-            cls = jpair_dstream_cls
             cls_name = "org.apache.spark.streaming.api.java.JavaPairDStream"
         else:
-            cls_name = dstreams[0]._jdstream.getClass().getCanonicalName()
-            raise TypeError("Unsupported Java DStream class %s" % cls_name)
+            jclass = bridge.call(dstreams[0]._jdstream, "getClass")
+            actual_cls_name = bridge.call(jclass, "getCanonicalName")
+            raise TypeError("Unsupported Java DStream class %s" % actual_cls_name)
 
         jdstreams = bridge.new_array(cls_name, len(dstreams))
         for i in range(0, len(dstreams)):
             bridge.array_set(jdstreams, i, dstreams[i]._jdstream)
         return DStream(
-            self._jssc.union(jdstreams),
+            bridge.call(self._jssc, "union", jdstreams),
             self,
             dstreams[0]._jrdd_deserializer,
         )
@@ -473,9 +481,13 @@ class StreamingContext:
         Add a [[org.apache.spark.streaming.scheduler.StreamingListener]] object for
         receiving system events related to streaming.
         """
-        assert self._jvm is not None
-        self._jssc.addStreamingListener(
-            self._jvm.JavaStreamingListenerWrapper(
-                self._jvm.PythonStreamingListenerWrapper(streamingListener)
-            )
+        bridge = get_bridge()
+        python_wrapper = bridge.new(
+            "org.apache.spark.streaming.api.python.PythonStreamingListenerWrapper",
+            streamingListener,
         )
+        java_wrapper = bridge.new(
+            "org.apache.spark.streaming.api.java.JavaStreamingListenerWrapper",
+            python_wrapper,
+        )
+        bridge.call(self._jssc, "addStreamingListener", java_wrapper)

@@ -756,9 +756,12 @@ class HiveContext(SQLContext):
         you may end up launching multiple derby instances and encounter with incredibly
         confusing error messages.
         """
+        from pyspark.jvm_bridge import get_bridge
+
         jsc = sparkContext._jsc.sc()
-        assert sparkContext._jvm is not None
-        jtestHive = sparkContext._jvm.org.apache.spark.sql.hive.test.TestHiveContext(jsc, False)
+        jtestHive = get_bridge().new(
+            "org.apache.spark.sql.hive.test.TestHiveContext", jsc, False
+        )
         return cls(sparkContext, jtestHive)
 
     def refreshTable(self, tableName: str) -> None:

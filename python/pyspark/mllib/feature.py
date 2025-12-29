@@ -852,10 +852,13 @@ class Word2VecModel(JavaVectorTransformer, JavaSaveable, JavaLoader["Word2VecMod
         """
         Load a model from the given path.
         """
-        assert sc._jvm is not None
+        from pyspark.jvm_bridge import get_bridge
 
-        jmodel = sc._jvm.org.apache.spark.mllib.feature.Word2VecModel.load(sc._jsc.sc(), path)
-        model = sc._jvm.org.apache.spark.mllib.api.python.Word2VecModelWrapper(jmodel)
+        bridge = get_bridge()
+        jmodel = bridge.call_static(
+            "org.apache.spark.mllib.feature.Word2VecModel", "load", sc._jsc.sc(), path
+        )
+        model = bridge.new("org.apache.spark.mllib.api.python.Word2VecModelWrapper", jmodel)
         return Word2VecModel(model)
 
 

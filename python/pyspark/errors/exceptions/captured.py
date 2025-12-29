@@ -98,17 +98,15 @@ class CapturedException(PySparkException):
         return str(desc)
 
     def getCondition(self) -> Optional[str]:
-        from pyspark import SparkContext
         from pyspark.jvm_bridge import get_bridge
-
-        assert SparkContext._jvm is not None
 
         bridge = get_bridge()
         if self._origin is not None and bridge.is_instance_of(
             self._origin, "org.apache.spark.SparkThrowable"
         ):
-            utils = SparkContext._jvm.PythonErrorUtils  # type: ignore[union-attr]
-            return utils.getCondition(self._origin)
+            return bridge.call_static(
+                "org.apache.spark.api.python.PythonErrorUtils", "getCondition", self._origin
+            )
         else:
             return None
 
@@ -117,52 +115,55 @@ class CapturedException(PySparkException):
         return self.getCondition()
 
     def getMessageParameters(self) -> Optional[Dict[str, str]]:
-        from pyspark import SparkContext
         from pyspark.jvm_bridge import get_bridge
-
-        assert SparkContext._jvm is not None
 
         bridge = get_bridge()
         if self._origin is not None and bridge.is_instance_of(
             self._origin, "org.apache.spark.SparkThrowable"
         ):
-            utils = SparkContext._jvm.PythonErrorUtils  # type: ignore[union-attr]
-            return dict(utils.getMessageParameters(self._origin))
+            result = bridge.call_static(
+                "org.apache.spark.api.python.PythonErrorUtils",
+                "getMessageParameters",
+                self._origin,
+            )
+            return dict(result)
         else:
             return None
 
     def getSqlState(self) -> Optional[str]:
-        from pyspark import SparkContext
         from pyspark.jvm_bridge import get_bridge
-
-        assert SparkContext._jvm is not None
 
         bridge = get_bridge()
         if self._origin is not None and bridge.is_instance_of(
             self._origin, "org.apache.spark.SparkThrowable"
         ):
-            utils = SparkContext._jvm.PythonErrorUtils  # type: ignore[union-attr]
-            return utils.getSqlState(self._origin)
+            return bridge.call_static(
+                "org.apache.spark.api.python.PythonErrorUtils", "getSqlState", self._origin
+            )
         else:
             return None
 
     def getMessage(self) -> str:
-        from pyspark import SparkContext
         from pyspark.jvm_bridge import get_bridge
-
-        assert SparkContext._jvm is not None
 
         bridge = get_bridge()
         if self._origin is not None and bridge.is_instance_of(
             self._origin, "org.apache.spark.SparkThrowable"
         ):
-            utils = SparkContext._jvm.PythonErrorUtils  # type: ignore[union-attr]
-            errorClass = utils.getCondition(self._origin)
-            messageParameters = utils.getMessageParameters(self._origin)
+            errorClass = bridge.call_static(
+                "org.apache.spark.api.python.PythonErrorUtils", "getCondition", self._origin
+            )
+            messageParameters = bridge.call_static(
+                "org.apache.spark.api.python.PythonErrorUtils",
+                "getMessageParameters",
+                self._origin,
+            )
 
             error_message = bridge.call_static(
-                "org.apache.spark.SparkThrowableHelper", "getMessage",
-                errorClass, messageParameters
+                "org.apache.spark.SparkThrowableHelper",
+                "getMessage",
+                errorClass,
+                messageParameters,
             )
 
             return error_message
@@ -170,18 +171,17 @@ class CapturedException(PySparkException):
             return ""
 
     def getQueryContext(self) -> List[BaseQueryContext]:
-        from pyspark import SparkContext
         from pyspark.jvm_bridge import get_bridge
-
-        assert SparkContext._jvm is not None
 
         bridge = get_bridge()
         if self._origin is not None and bridge.is_instance_of(
             self._origin, "org.apache.spark.SparkThrowable"
         ):
             contexts: List[BaseQueryContext] = []
-            utils = SparkContext._jvm.PythonErrorUtils  # type: ignore[union-attr]
-            for q in utils.getQueryContext(self._origin):
+            query_contexts = bridge.call_static(
+                "org.apache.spark.api.python.PythonErrorUtils", "getQueryContext", self._origin
+            )
+            for q in query_contexts:
                 if q.contextType().toString() == "SQL":
                     contexts.append(SQLQueryContext(q))
                 else:

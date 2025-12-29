@@ -38,11 +38,15 @@ class InternalFunction:
         else:
             from pyspark.sql.classic.column import Column, _to_seq, _to_java_column
             from pyspark import SparkContext
+            from pyspark.jvm_bridge import get_bridge
 
             sc = SparkContext._active_spark_context
             return Column(
-                sc._jvm.PythonSQLUtils.internalFn(  # type: ignore
-                    name, _to_seq(sc, cols, _to_java_column)  # type: ignore
+                get_bridge().call_static(
+                    "org.apache.spark.sql.api.python.PythonSQLUtils",
+                    "internalFn",
+                    name,
+                    _to_seq(sc, cols, _to_java_column),  # type: ignore
                 )
             )
 

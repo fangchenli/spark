@@ -312,8 +312,12 @@ class DataFrameReader(OptionUtils):
         elif path is not None:
             if type(path) != list:
                 path = [path]  # type: ignore[list-item]
-            assert self._spark._sc._jvm is not None
-            return self._df(self._jreader.load(self._spark._sc._jvm.PythonUtils.toSeq(path)))
+            from pyspark.jvm_bridge import get_bridge
+
+            jseq = get_bridge().call_static(
+                "org.apache.spark.api.python.PythonUtils", "toSeq", path
+            )
+            return self._df(self._jreader.load(jseq))
         else:
             return self._df(self._jreader.load())
 
@@ -464,8 +468,12 @@ class DataFrameReader(OptionUtils):
         if isinstance(path, str):
             path = [path]
         if type(path) == list:
-            assert self._spark._sc._jvm is not None
-            return self._df(self._jreader.json(self._spark._sc._jvm.PythonUtils.toSeq(path)))
+            from pyspark.jvm_bridge import get_bridge
+
+            jseq = get_bridge().call_static(
+                "org.apache.spark.api.python.PythonUtils", "toSeq", path
+            )
+            return self._df(self._jreader.json(jseq))
 
         if not is_remote_only():
             from pyspark.core.rdd import RDD  # noqa: F401
@@ -482,8 +490,11 @@ class DataFrameReader(OptionUtils):
 
             keyed = path.mapPartitions(func)
             keyed._bypass_serializer = True  # type: ignore[attr-defined]
-            assert self._spark._jvm is not None
-            jrdd = keyed._jrdd.map(self._spark._jvm.BytesToString())
+            from pyspark.jvm_bridge import get_bridge
+
+            bridge = get_bridge()
+            bytes_to_string = bridge.new("org.apache.spark.api.python.BytesToString")
+            jrdd = bridge.call(keyed._jrdd, "map", bytes_to_string)
             return self._df(self._jreader.json(jrdd))
         else:
             raise PySparkTypeError(
@@ -709,8 +720,10 @@ class DataFrameReader(OptionUtils):
 
         if isinstance(paths, str):
             paths = [paths]
-        assert self._spark._sc._jvm is not None
-        return self._df(self._jreader.text(self._spark._sc._jvm.PythonUtils.toSeq(paths)))
+        from pyspark.jvm_bridge import get_bridge
+
+        jseq = get_bridge().call_static("org.apache.spark.api.python.PythonUtils", "toSeq", paths)
+        return self._df(self._jreader.text(jseq))
 
     def csv(
         self,
@@ -834,8 +847,12 @@ class DataFrameReader(OptionUtils):
         if isinstance(path, str):
             path = [path]
         if type(path) == list:
-            assert self._spark._sc._jvm is not None
-            return self._df(self._jreader.csv(self._spark._sc._jvm.PythonUtils.toSeq(path)))
+            from pyspark.jvm_bridge import get_bridge
+
+            jseq = get_bridge().call_static(
+                "org.apache.spark.api.python.PythonUtils", "toSeq", path
+            )
+            return self._df(self._jreader.csv(jseq))
 
         if not is_remote_only():
             from pyspark.core.rdd import RDD  # noqa: F401
@@ -852,13 +869,18 @@ class DataFrameReader(OptionUtils):
 
             keyed = path.mapPartitions(func)
             keyed._bypass_serializer = True
-            jrdd = keyed._jrdd.map(self._spark._jvm.BytesToString())
+            from pyspark.jvm_bridge import get_bridge
+
+            bridge = get_bridge()
+            bytes_to_string = bridge.new("org.apache.spark.api.python.BytesToString")
+            jrdd = bridge.call(keyed._jrdd, "map", bytes_to_string)
             # see SPARK-22112
             # There aren't any jvm api for creating a dataframe from rdd storing csv.
             # We can do it through creating a jvm dataset firstly and using the jvm api
             # for creating a dataframe from dataset storing csv.
+            string_encoder = bridge.call_static("org.apache.spark.sql.Encoders", "STRING")
             jdataset = self._spark._jsparkSession.createDataset(
-                jrdd.rdd(), self._spark._jvm.Encoders.STRING()
+                bridge.call(jrdd, "rdd"), string_encoder
             )
             return self._df(self._jreader.csv(jdataset))
         else:
@@ -961,8 +983,12 @@ class DataFrameReader(OptionUtils):
         if isinstance(path, str):
             path = [path]
         if type(path) == list:
-            assert self._spark._sc._jvm is not None
-            return self._df(self._jreader.xml(self._spark._sc._jvm.PythonUtils.toSeq(path)))
+            from pyspark.jvm_bridge import get_bridge
+
+            jseq = get_bridge().call_static(
+                "org.apache.spark.api.python.PythonUtils", "toSeq", path
+            )
+            return self._df(self._jreader.xml(jseq))
 
         if not is_remote_only():
             from pyspark.core.rdd import RDD  # noqa: F401
@@ -979,13 +1005,17 @@ class DataFrameReader(OptionUtils):
 
             keyed = path.mapPartitions(func)
             keyed._bypass_serializer = True  # type: ignore[attr-defined]
-            assert self._spark._jvm is not None
-            jrdd = keyed._jrdd.map(self._spark._jvm.BytesToString())
+            from pyspark.jvm_bridge import get_bridge
+
+            bridge = get_bridge()
+            bytes_to_string = bridge.new("org.apache.spark.api.python.BytesToString")
+            jrdd = bridge.call(keyed._jrdd, "map", bytes_to_string)
             # There isn't any jvm api for creating a dataframe from rdd storing XML.
             # We can do it through creating a jvm dataset first and using the jvm api
             # for creating a dataframe from dataset storing XML.
+            string_encoder = bridge.call_static("org.apache.spark.sql.Encoders", "STRING")
             jdataset = self._spark._jsparkSession.createDataset(
-                jrdd.rdd(), self._spark._jvm.Encoders.STRING()
+                bridge.call(jrdd, "rdd"), string_encoder
             )
             return self._df(self._jreader.xml(jdataset))
         else:

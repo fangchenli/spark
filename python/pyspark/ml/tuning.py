@@ -366,11 +366,17 @@ class _ValidatorSharedReadWrite:
                         + "."
                         + javaParam.name()
                     )
+                from pyspark.jvm_bridge import get_bridge
+
                 javaValue = javaPair.value()
                 pyValue: Any
-                if sc._jvm.Class.forName(
-                    "org.apache.spark.ml.util.DefaultParamsWritable"
-                ).isInstance(javaValue):
+                bridge = get_bridge()
+                default_params_writable_class = bridge.call_static(
+                    "java.lang.Class",
+                    "forName",
+                    "org.apache.spark.ml.util.DefaultParamsWritable",
+                )
+                if bridge.call(default_params_writable_class, "isInstance", javaValue):
                     pyValue = JavaParams._from_java(javaValue)
                 else:
                     pyValue = _java2py(sc, javaValue)

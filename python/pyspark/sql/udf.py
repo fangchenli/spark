@@ -50,6 +50,7 @@ def _wrap_function(
     sc: "SparkContext", func: Callable[..., Any], returnType: Optional[DataType] = None
 ) -> "JavaObject":
     from pyspark.core.rdd import _prepare_for_python_RDD
+    from pyspark.jvm_bridge import get_bridge
 
     command: Any
     if returnType is None:
@@ -57,8 +58,8 @@ def _wrap_function(
     else:
         command = (func, returnType)
     pickled_command, broadcast_vars, env, includes = _prepare_for_python_RDD(sc, command)
-    assert sc._jvm is not None
-    return sc._jvm.SimplePythonFunction(
+    return get_bridge().new(
+        "org.apache.spark.api.python.SimplePythonFunction",
         bytearray(pickled_command),
         env,
         includes,
@@ -419,12 +420,18 @@ class UserDefinedFunction:
 
     def __call__(self, *args: "ColumnOrName", **kwargs: "ColumnOrName") -> Column:
         from pyspark.sql.classic.column import _to_java_column, _to_seq
+        from pyspark.jvm_bridge import get_bridge
 
         sc = get_active_spark_context()
+        bridge = get_bridge()
 
-        assert sc._jvm is not None
         jcols = [_to_java_column(arg) for arg in args] + [
-            sc._jvm.PythonSQLUtils.namedArgumentExpression(key, _to_java_column(value))
+            bridge.call_static(
+                "org.apache.spark.sql.api.python.PythonSQLUtils",
+                "namedArgumentExpression",
+                key,
+                _to_java_column(value),
+            )
             for key, value in kwargs.items()
         ]
 

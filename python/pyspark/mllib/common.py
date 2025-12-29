@@ -67,13 +67,18 @@ def _to_java_object_rdd(rdd: RDD) -> JavaObject:
     It will convert each Python object into Java object by Pickle, whenever the
     RDD is serialized in batch or not.
     """
+    from pyspark.jvm_bridge import get_bridge
+
     rdd = rdd._reserialize(AutoBatchedSerializer(CPickleSerializer()))
-    assert rdd.ctx._jvm is not None
-    return rdd.ctx._jvm.org.apache.spark.mllib.api.python.SerDe.pythonToJava(rdd._jrdd, True)
+    return get_bridge().call_static(
+        "org.apache.spark.mllib.api.python.SerDe", "pythonToJava", rdd._jrdd, True
+    )
 
 
 def _py2java(sc: SparkContext, obj: Any) -> JavaObject:
     """Convert Python object into Java"""
+    from pyspark.jvm_bridge import get_bridge
+
     if isinstance(obj, RDD):
         obj = _to_java_object_rdd(obj)
     elif isinstance(obj, DataFrame):
@@ -88,12 +93,15 @@ def _py2java(sc: SparkContext, obj: Any) -> JavaObject:
         pass
     else:
         data = bytearray(CPickleSerializer().dumps(obj))
-        assert sc._jvm is not None
-        obj = sc._jvm.org.apache.spark.mllib.api.python.SerDe.loads(data)
+        obj = get_bridge().call_static(
+            "org.apache.spark.mllib.api.python.SerDe", "loads", data
+        )
     return obj
 
 
 def _java2py(sc: SparkContext, r: "JavaObjectOrPickleDump", encoding: str = "bytes") -> Any:
+    from pyspark.jvm_bridge import get_bridge
+
     if isinstance(r, JavaObject):
         clsName = r.getClass().getSimpleName()
         # convert RDD into JavaRDD
@@ -101,20 +109,22 @@ def _java2py(sc: SparkContext, r: "JavaObjectOrPickleDump", encoding: str = "byt
             r = r.toJavaRDD()
             clsName = "JavaRDD"
 
-        assert sc._jvm is not None
+        bridge = get_bridge()
 
         if clsName == "JavaRDD":
-            jrdd = sc._jvm.org.apache.spark.mllib.api.python.SerDe.javaToPython(r)
+            jrdd = bridge.call_static(
+                "org.apache.spark.mllib.api.python.SerDe", "javaToPython", r
+            )
             return RDD(jrdd, sc)
 
         if clsName == "Dataset":
             return DataFrame(r, SparkSession._getActiveSessionOrCreate())
 
         if clsName in _picklable_classes:
-            r = sc._jvm.org.apache.spark.mllib.api.python.SerDe.dumps(r)
+            r = bridge.call_static("org.apache.spark.mllib.api.python.SerDe", "dumps", r)
         elif isinstance(r, (JavaArray, JavaList)):
             try:
-                r = sc._jvm.org.apache.spark.mllib.api.python.SerDe.dumps(r)
+                r = bridge.call_static("org.apache.spark.mllib.api.python.SerDe", "dumps", r)
             except Py4JJavaError:
                 pass  # not pickable
 
@@ -133,9 +143,12 @@ def callJavaFunc(
 
 def callMLlibFunc(name: str, *args: Any) -> Any:
     """Call API in PythonMLLibAPI"""
+    from pyspark.jvm_bridge import get_bridge
+
     sc = SparkContext.getOrCreate()
-    assert sc._jvm is not None
-    api = getattr(sc._jvm.PythonMLLibAPI(), name)
+    bridge = get_bridge()
+    python_mllib_api = bridge.new("org.apache.spark.mllib.api.python.PythonMLLibAPI")
+    api = getattr(python_mllib_api, name)
     return callJavaFunc(sc, api, *args)
 
 

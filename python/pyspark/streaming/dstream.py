@@ -38,6 +38,7 @@ from typing import (
 from py4j.protocol import Py4JJavaError
 from py4j.java_gateway import JavaObject
 
+from pyspark.jvm_bridge import get_bridge
 from pyspark.storagelevel import StorageLevel
 from pyspark.streaming.util import rddToFileName, TransformFunction
 from pyspark.core.rdd import portable_hash, RDD
@@ -236,9 +237,12 @@ class DStream(Generic[T_co]):
                 return old_func(rdd)  # type: ignore[call-arg, arg-type]
 
         jfunc = TransformFunction(self._sc, func, self._jrdd_deserializer)
-        assert self._ssc._jvm is not None
-        api = self._ssc._jvm.PythonDStream
-        api.callForeachRDD(self._jdstream, jfunc)
+        get_bridge().call_static(
+            "org.apache.spark.streaming.api.python.PythonDStream",
+            "callForeachRDD",
+            self._jdstream,
+            jfunc,
+        )
 
     def pprint(self, num: int = 10) -> None:
         """
@@ -459,12 +463,15 @@ class DStream(Generic[T_co]):
             self._jrdd_deserializer,
             other._jrdd_deserializer,
         )
-        assert self._sc._jvm is not None
-        dstream = self._sc._jvm.PythonTransformed2DStream(
-            self._jdstream.dstream(), other._jdstream.dstream(), jfunc
+        bridge = get_bridge()
+        dstream = bridge.new(
+            "org.apache.spark.streaming.api.python.PythonTransformed2DStream",
+            bridge.call(self._jdstream, "dstream"),
+            bridge.call(other._jdstream, "dstream"),
+            jfunc,
         )
         jrdd_serializer = self._jrdd_deserializer if keepSerializer else self._sc.serializer
-        return DStream(dstream.asJavaDStream(), self._ssc, jrdd_serializer)
+        return DStream(bridge.call(dstream, "asJavaDStream"), self._ssc, jrdd_serializer)
 
     def repartition(self: "DStream[T]", numPartitions: int) -> "DStream[T]":
         """
@@ -579,8 +586,7 @@ class DStream(Generic[T_co]):
         """Convert datetime or unix_timestamp into Time"""
         if isinstance(timestamp, datetime):
             timestamp = time.mktime(timestamp.timetuple())
-        assert self._sc._jvm is not None
-        return self._sc._jvm.Time(int(timestamp * 1000))
+        return get_bridge().new("org.apache.spark.streaming.Time", int(timestamp * 1000))
 
     def slice(self, begin: Union[datetime, int], end: Union[datetime, int]) -> List[RDD[T]]:
         """
@@ -807,15 +813,16 @@ class DStream(Generic[T_co]):
             jinvReduceFunc = TransformFunction(self._sc, invReduceFunc, reduced._jrdd_deserializer)
             if slideDuration is None:
                 slideDuration = self._slideDuration
-            assert self._sc._jvm is not None
-            dstream = self._sc._jvm.PythonReducedWindowedDStream(
-                reduced._jdstream.dstream(),
+            bridge = get_bridge()
+            dstream = bridge.new(
+                "org.apache.spark.streaming.api.python.PythonReducedWindowedDStream",
+                bridge.call(reduced._jdstream, "dstream"),
                 jreduceFunc,
                 jinvReduceFunc,
                 self._ssc._jduration(windowDuration),
                 self._ssc._jduration(slideDuration),  # type: ignore[arg-type]
             )
-            return DStream(dstream.asJavaDStream(), self._ssc, self._sc.serializer)
+            return DStream(bridge.call(dstream, "asJavaDStream"), self._ssc, self._sc.serializer)
         else:
             return reduced.window(windowDuration, slideDuration).reduceByKey(
                 func, numPartitions  # type: ignore[arg-type]
@@ -858,19 +865,23 @@ class DStream(Generic[T_co]):
             self._sc.serializer,
             self._jrdd_deserializer,
         )
+        bridge = get_bridge()
         if initialRDD:
             initialRDD = cast(RDD[Tuple[K, S]], initialRDD)._reserialize(self._jrdd_deserializer)
-            assert self._sc._jvm is not None
-            dstream = self._sc._jvm.PythonStateDStream(
-                self._jdstream.dstream(),
+            dstream = bridge.new(
+                "org.apache.spark.streaming.api.python.PythonStateDStream",
+                bridge.call(self._jdstream, "dstream"),
                 jreduceFunc,
                 initialRDD._jrdd,
             )
         else:
-            assert self._sc._jvm is not None
-            dstream = self._sc._jvm.PythonStateDStream(self._jdstream.dstream(), jreduceFunc)
+            dstream = bridge.new(
+                "org.apache.spark.streaming.api.python.PythonStateDStream",
+                bridge.call(self._jdstream, "dstream"),
+                jreduceFunc,
+            )
 
-        return DStream(dstream.asJavaDStream(), self._ssc, self._sc.serializer)
+        return DStream(bridge.call(dstream, "asJavaDStream"), self._ssc, self._sc.serializer)
 
 
 class TransformedDStream(DStream[U]):
@@ -925,7 +936,11 @@ class TransformedDStream(DStream[U]):
             return self._jdstream_val
 
         jfunc = TransformFunction(self._sc, self.func, self.prev._jrdd_deserializer)
-        assert self._sc._jvm is not None
-        dstream = self._sc._jvm.PythonTransformedDStream(self.prev._jdstream.dstream(), jfunc)
-        self._jdstream_val = dstream.asJavaDStream()
+        bridge = get_bridge()
+        dstream = bridge.new(
+            "org.apache.spark.streaming.api.python.PythonTransformedDStream",
+            bridge.call(self.prev._jdstream, "dstream"),
+            jfunc,
+        )
+        self._jdstream_val = bridge.call(dstream, "asJavaDStream")
         return self._jdstream_val

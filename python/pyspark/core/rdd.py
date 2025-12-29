@@ -69,6 +69,7 @@ from pyspark.join import (
     python_full_outer_join,
     python_cogroup,
 )
+from pyspark.jvm_bridge import get_bridge
 from pyspark.statcounter import StatCounter
 from pyspark.rddsampler import RDDSampler, RDDRangeSampler, RDDStratifiedSampler
 from pyspark.storagelevel import StorageLevel
@@ -1696,8 +1697,11 @@ class RDD(Generic[T_co]):
         ['x', 'y', 'z']
         """
         with SCCallSiteSync(self.context):
-            assert self.ctx._jvm is not None
-            sock_info = self.ctx._jvm.PythonRDD.collectAndServe(self._jrdd.rdd())
+            bridge = get_bridge()
+            rdd = bridge.call(self._jrdd, "rdd")
+            sock_info = bridge.call_static(
+                "org.apache.spark.api.python.PythonRDD", "collectAndServe", rdd
+            )
         with _load_from_socket(sock_info, self._jrdd_deserializer) as stream:
             return list(stream)
 
@@ -1738,9 +1742,15 @@ class RDD(Generic[T_co]):
         )
 
         with SCCallSiteSync(self.context):
-            assert self.ctx._jvm is not None
-            sock_info = self.ctx._jvm.PythonRDD.collectAndServeWithJobGroup(
-                self._jrdd.rdd(), groupId, description, interruptOnCancel
+            bridge = get_bridge()
+            rdd = bridge.call(self._jrdd, "rdd")
+            sock_info = bridge.call_static(
+                "org.apache.spark.api.python.PythonRDD",
+                "collectAndServeWithJobGroup",
+                rdd,
+                groupId,
+                description,
+                interruptOnCancel,
             )
         with _load_from_socket(sock_info, self._jrdd_deserializer) as stream:
             return list(stream)
@@ -2857,10 +2867,16 @@ class RDD(Generic[T_co]):
         """
         jconf = self.ctx._dictToJavaMap(conf)
         pickledRDD = self._pickled()
-        assert self.ctx._jvm is not None
 
-        self.ctx._jvm.PythonRDD.saveAsHadoopDataset(
-            pickledRDD._jrdd, True, jconf, keyConverter, valueConverter, True
+        get_bridge().call_static(
+            "org.apache.spark.api.python.PythonRDD",
+            "saveAsHadoopDataset",
+            pickledRDD._jrdd,
+            True,
+            jconf,
+            keyConverter,
+            valueConverter,
+            True,
         )
 
     def saveAsNewAPIHadoopFile(
@@ -2933,9 +2949,10 @@ class RDD(Generic[T_co]):
         """
         jconf = self.ctx._dictToJavaMap(conf)
         pickledRDD = self._pickled()
-        assert self.ctx._jvm is not None
 
-        self.ctx._jvm.PythonRDD.saveAsNewAPIHadoopFile(
+        get_bridge().call_static(
+            "org.apache.spark.api.python.PythonRDD",
+            "saveAsNewAPIHadoopFile",
             pickledRDD._jrdd,
             True,
             path,
@@ -3015,10 +3032,16 @@ class RDD(Generic[T_co]):
         """
         jconf = self.ctx._dictToJavaMap(conf)
         pickledRDD = self._pickled()
-        assert self.ctx._jvm is not None
 
-        self.ctx._jvm.PythonRDD.saveAsHadoopDataset(
-            pickledRDD._jrdd, True, jconf, keyConverter, valueConverter, False
+        get_bridge().call_static(
+            "org.apache.spark.api.python.PythonRDD",
+            "saveAsHadoopDataset",
+            pickledRDD._jrdd,
+            True,
+            jconf,
+            keyConverter,
+            valueConverter,
+            False,
         )
 
     def saveAsHadoopFile(
@@ -3099,9 +3122,10 @@ class RDD(Generic[T_co]):
         """
         jconf = self.ctx._dictToJavaMap(conf)
         pickledRDD = self._pickled()
-        assert self.ctx._jvm is not None
 
-        self.ctx._jvm.PythonRDD.saveAsHadoopFile(
+        get_bridge().call_static(
+            "org.apache.spark.api.python.PythonRDD",
+            "saveAsHadoopFile",
             pickledRDD._jrdd,
             True,
             path,
@@ -3164,10 +3188,14 @@ class RDD(Generic[T_co]):
         [(1, ''), (1, 'a'), (3, 'x')]
         """
         pickledRDD = self._pickled()
-        assert self.ctx._jvm is not None
 
-        self.ctx._jvm.PythonRDD.saveAsSequenceFile(
-            pickledRDD._jrdd, True, path, compressionCodecClass
+        get_bridge().call_static(
+            "org.apache.spark.api.python.PythonRDD",
+            "saveAsSequenceFile",
+            pickledRDD._jrdd,
+            True,
+            path,
+            compressionCodecClass,
         )
 
     def saveAsPickleFile(self, path: str, batchSize: int = 10) -> None:
@@ -3285,15 +3313,17 @@ class RDD(Generic[T_co]):
         keyed = self.mapPartitionsWithIndex(func)
         keyed._bypass_serializer = True  # type: ignore[attr-defined]
 
-        assert self.ctx._jvm is not None
+        bridge = get_bridge()
+        bytes_to_string = bridge.new("org.apache.spark.api.python.BytesToString")
+        mapped_rdd = bridge.call(keyed._jrdd, "map", bytes_to_string)
 
         if compressionCodecClass:
-            compressionCodec = getattr(self.ctx._jvm, "java.lang.Class").forName(
-                compressionCodecClass
+            compressionCodec = bridge.call_static(
+                "java.lang.Class", "forName", compressionCodecClass
             )
-            keyed._jrdd.map(self.ctx._jvm.BytesToString()).saveAsTextFile(path, compressionCodec)
+            bridge.call(mapped_rdd, "saveAsTextFile", path, compressionCodec)
         else:
-            keyed._jrdd.map(self.ctx._jvm.BytesToString()).saveAsTextFile(path)
+            bridge.call(mapped_rdd, "saveAsTextFile", path)
 
     # Pair functions
 
@@ -3763,12 +3793,21 @@ class RDD(Generic[T_co]):
 
         keyed = self.mapPartitionsWithIndex(add_shuffle_key, preservesPartitioning=True)
         keyed._bypass_serializer = True  # type: ignore[attr-defined]
-        assert self.ctx._jvm is not None
 
+        bridge = get_bridge()
         with SCCallSiteSync(self.context):
-            pairRDD = self.ctx._jvm.PairwiseRDD(keyed._jrdd.rdd()).asJavaPairRDD()
-            jpartitioner = self.ctx._jvm.PythonPartitioner(num_partitions, id(partitionFunc))
-        jrdd = self.ctx._jvm.PythonRDD.valueOfPair(pairRDD.partitionBy(jpartitioner))
+            rdd_obj = bridge.call(keyed._jrdd, "rdd")
+            pairwise_rdd = bridge.new("org.apache.spark.api.python.PairwiseRDD", rdd_obj)
+            pairRDD = bridge.call(pairwise_rdd, "asJavaPairRDD")
+            jpartitioner = bridge.new(
+                "org.apache.spark.api.python.PythonPartitioner",
+                num_partitions,
+                id(partitionFunc),
+            )
+        partitioned = bridge.call(pairRDD, "partitionBy", jpartitioner)
+        jrdd = bridge.call_static(
+            "org.apache.spark.api.python.PythonRDD", "valueOfPair", partitioned
+        )
         rdd: "RDD[Tuple[K, V]]" = RDD(jrdd, self.ctx, BatchedSerializer(outputSerializer))
         rdd.partitioner = partitioner
         return rdd
@@ -4785,9 +4824,10 @@ class RDD(Generic[T_co]):
         RDD is serialized in batch or not.
         """
         rdd = self._pickled()
-        assert self.ctx._jvm is not None
 
-        return self.ctx._jvm.SerDeUtil.pythonToJava(rdd._jrdd, True)
+        return get_bridge().call_static(
+            "org.apache.spark.api.python.SerDeUtil", "pythonToJava", rdd._jrdd, True
+        )
 
     def countApprox(self, timeout: int, confidence: float = 0.95) -> int:
         """
@@ -4854,10 +4894,19 @@ class RDD(Generic[T_co]):
         True
         """
         jrdd = self.mapPartitions(lambda it: [float(sum(it))])._to_java_object_rdd()
-        assert self.ctx._jvm is not None
-        jdrdd = self.ctx._jvm.JavaDoubleRDD.fromRDD(jrdd.rdd())
-        r = jdrdd.sumApprox(timeout, confidence).getFinalValue()
-        return BoundedFloat(r.mean(), r.confidence(), r.low(), r.high())
+        bridge = get_bridge()
+        rdd_obj = bridge.call(jrdd, "rdd")
+        jdrdd = bridge.call_static(
+            "org.apache.spark.api.java.JavaDoubleRDD", "fromRDD", rdd_obj
+        )
+        approx_result = bridge.call(jdrdd, "sumApprox", timeout, confidence)
+        r = bridge.call(approx_result, "getFinalValue")
+        return BoundedFloat(
+            bridge.call(r, "mean"),
+            bridge.call(r, "confidence"),
+            bridge.call(r, "low"),
+            bridge.call(r, "high"),
+        )
 
     def meanApprox(
         self: "RDD[Union[float, int]]", timeout: int, confidence: float = 0.95
@@ -4892,10 +4941,19 @@ class RDD(Generic[T_co]):
         True
         """
         jrdd = self.map(float)._to_java_object_rdd()
-        assert self.ctx._jvm is not None
-        jdrdd = self.ctx._jvm.JavaDoubleRDD.fromRDD(jrdd.rdd())
-        r = jdrdd.meanApprox(timeout, confidence).getFinalValue()
-        return BoundedFloat(r.mean(), r.confidence(), r.low(), r.high())
+        bridge = get_bridge()
+        rdd_obj = bridge.call(jrdd, "rdd")
+        jdrdd = bridge.call_static(
+            "org.apache.spark.api.java.JavaDoubleRDD", "fromRDD", rdd_obj
+        )
+        approx_result = bridge.call(jdrdd, "meanApprox", timeout, confidence)
+        r = bridge.call(approx_result, "getFinalValue")
+        return BoundedFloat(
+            bridge.call(r, "mean"),
+            bridge.call(r, "confidence"),
+            bridge.call(r, "low"),
+            bridge.call(r, "high"),
+        )
 
     def countApproxDistinct(self: "RDD[T]", relativeSD: float = 0.05) -> int:
         """
@@ -4971,11 +5029,14 @@ class RDD(Generic[T_co]):
         >>> [x for x in rdd.toLocalIterator()]
         [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
         """
-        assert self.ctx._jvm is not None
-
+        bridge = get_bridge()
         with SCCallSiteSync(self.context):
-            sock_info = self.ctx._jvm.PythonRDD.toLocalIteratorAndServe(
-                self._jrdd.rdd(), prefetchPartitions
+            rdd_obj = bridge.call(self._jrdd, "rdd")
+            sock_info = bridge.call_static(
+                "org.apache.spark.api.python.PythonRDD",
+                "toLocalIteratorAndServe",
+                rdd_obj,
+                prefetchPartitions,
             )
         return _local_iterator_from_socket(sock_info, self._jrdd_deserializer)
 
@@ -5121,8 +5182,10 @@ def _prepare_for_python_RDD(sc: "SparkContext", command: Any) -> Tuple[bytes, An
     # the serialized command will be compressed by broadcast
     ser = CloudPickleSerializer()
     pickled_command = ser.dumps(command)
-    assert sc._jvm is not None
-    if len(pickled_command) > sc._jvm.PythonUtils.getBroadcastThreshold(sc._jsc):  # Default 1M
+    threshold = get_bridge().call_static(
+        "org.apache.spark.api.python.PythonUtils", "getBroadcastThreshold", sc._jsc
+    )
+    if len(pickled_command) > threshold:  # Default 1M
         # The broadcast will have same life cycle as created PythonRDD
         broadcast = sc.broadcast(pickled_command)
         pickled_command = ser.dumps(broadcast)
@@ -5138,8 +5201,8 @@ def _wrap_function(
     assert serializer, "serializer should not be empty"
     command = (func, profiler, deserializer, serializer)
     pickled_command, broadcast_vars, env, includes = _prepare_for_python_RDD(sc, command)
-    assert sc._jvm is not None
-    return sc._jvm.SimplePythonFunction(
+    return get_bridge().new(
+        "org.apache.spark.api.python.SimplePythonFunction",
         bytearray(pickled_command),
         env,
         includes,
@@ -5345,11 +5408,16 @@ class PipelinedRDD(RDD[U], Generic[T, U]):
             self.ctx, self.func, self._prev_jrdd_deserializer, self._jrdd_deserializer, profiler
         )
 
-        assert self.ctx._jvm is not None
-        python_rdd = self.ctx._jvm.PythonRDD(
-            self._prev_jrdd.rdd(), wrapped_func, self.preservesPartitioning, self.is_barrier
+        bridge = get_bridge()
+        prev_rdd = bridge.call(self._prev_jrdd, "rdd")
+        python_rdd = bridge.new(
+            "org.apache.spark.api.python.PythonRDD",
+            prev_rdd,
+            wrapped_func,
+            self.preservesPartitioning,
+            self.is_barrier,
         )
-        self._jrdd_val = python_rdd.asJavaRDD()
+        self._jrdd_val = bridge.call(python_rdd, "asJavaRDD")
 
         if profiler:
             assert self._jrdd_val is not None

@@ -100,10 +100,11 @@ def _to_seq(
     An optional `converter` could be used to convert items in `cols`
     into JVM Column objects.
     """
+    from pyspark.jvm_bridge import get_bridge
+
     if converter:
         cols = [converter(c) for c in cols]
-    assert sc._jvm is not None
-    return sc._jvm.PythonUtils.toSeq(cols)
+    return get_bridge().call_static("org.apache.spark.api.python.PythonUtils", "toSeq", cols)
 
 
 def _to_list(
@@ -117,10 +118,11 @@ def _to_list(
     An optional `converter` could be used to convert items in `cols`
     into JVM Column objects.
     """
+    from pyspark.jvm_bridge import get_bridge
+
     if converter:
         cols = [converter(c) for c in cols]
-    assert sc._jvm is not None
-    return sc._jvm.PythonUtils.toList(cols)
+    return get_bridge().call_static("org.apache.spark.api.python.PythonUtils", "toList", cols)
 
 
 def _unary_op(name: str, self: ParentColumn) -> ParentColumn:

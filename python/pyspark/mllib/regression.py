@@ -237,10 +237,12 @@ class LinearRegressionModel(LinearRegressionModelBase):
     @since("1.4.0")
     def save(self, sc: SparkContext, path: str) -> None:
         """Save a LinearRegressionModel."""
-        assert sc._jvm is not None
+        from pyspark.jvm_bridge import get_bridge
 
-        java_model = sc._jvm.org.apache.spark.mllib.regression.LinearRegressionModel(
-            _py2java(sc, self._coeff), self.intercept
+        java_model = get_bridge().new(
+            "org.apache.spark.mllib.regression.LinearRegressionModel",
+            _py2java(sc, self._coeff),
+            self.intercept,
         )
         java_model.save(sc._jsc.sc(), path)
 
@@ -248,10 +250,13 @@ class LinearRegressionModel(LinearRegressionModelBase):
     @since("1.4.0")
     def load(cls, sc: SparkContext, path: str) -> "LinearRegressionModel":
         """Load a LinearRegressionModel."""
-        assert sc._jvm is not None
+        from pyspark.jvm_bridge import get_bridge
 
-        java_model = sc._jvm.org.apache.spark.mllib.regression.LinearRegressionModel.load(
-            sc._jsc.sc(), path
+        java_model = get_bridge().call_static(
+            "org.apache.spark.mllib.regression.LinearRegressionModel",
+            "load",
+            sc._jsc.sc(),
+            path,
         )
         weights = _java2py(sc, java_model.weights())
         intercept = java_model.intercept()
@@ -449,10 +454,12 @@ class LassoModel(LinearRegressionModelBase):
     @since("1.4.0")
     def save(self, sc: SparkContext, path: str) -> None:
         """Save a LassoModel."""
-        assert sc._jvm is not None
+        from pyspark.jvm_bridge import get_bridge
 
-        java_model = sc._jvm.org.apache.spark.mllib.regression.LassoModel(
-            _py2java(sc, self._coeff), self.intercept
+        java_model = get_bridge().new(
+            "org.apache.spark.mllib.regression.LassoModel",
+            _py2java(sc, self._coeff),
+            self.intercept,
         )
         java_model.save(sc._jsc.sc(), path)
 
@@ -460,9 +467,11 @@ class LassoModel(LinearRegressionModelBase):
     @since("1.4.0")
     def load(cls, sc: SparkContext, path: str) -> "LassoModel":
         """Load a LassoModel."""
-        assert sc._jvm is not None
+        from pyspark.jvm_bridge import get_bridge
 
-        java_model = sc._jvm.org.apache.spark.mllib.regression.LassoModel.load(sc._jsc.sc(), path)
+        java_model = get_bridge().call_static(
+            "org.apache.spark.mllib.regression.LassoModel", "load", sc._jsc.sc(), path
+        )
         weights = _java2py(sc, java_model.weights())
         intercept = java_model.intercept()
         model = LassoModel(weights, intercept)
@@ -627,10 +636,12 @@ class RidgeRegressionModel(LinearRegressionModelBase):
     @since("1.4.0")
     def save(self, sc: SparkContext, path: str) -> None:
         """Save a RidgeRegressionMode."""
-        assert sc._jvm is not None
+        from pyspark.jvm_bridge import get_bridge
 
-        java_model = sc._jvm.org.apache.spark.mllib.regression.RidgeRegressionModel(
-            _py2java(sc, self._coeff), self.intercept
+        java_model = get_bridge().new(
+            "org.apache.spark.mllib.regression.RidgeRegressionModel",
+            _py2java(sc, self._coeff),
+            self.intercept,
         )
         java_model.save(sc._jsc.sc(), path)
 
@@ -638,10 +649,13 @@ class RidgeRegressionModel(LinearRegressionModelBase):
     @since("1.4.0")
     def load(cls, sc: SparkContext, path: str) -> "RidgeRegressionModel":
         """Load a RidgeRegressionMode."""
-        assert sc._jvm is not None
+        from pyspark.jvm_bridge import get_bridge
 
-        java_model = sc._jvm.org.apache.spark.mllib.regression.RidgeRegressionModel.load(
-            sc._jsc.sc(), path
+        java_model = get_bridge().call_static(
+            "org.apache.spark.mllib.regression.RidgeRegressionModel",
+            "load",
+            sc._jsc.sc(),
+            path,
         )
         weights = _java2py(sc, java_model.weights())
         intercept = java_model.intercept()
@@ -841,12 +855,15 @@ class IsotonicRegressionModel(Saveable, Loader["IsotonicRegressionModel"]):
     @since("1.4.0")
     def save(self, sc: SparkContext, path: str) -> None:
         """Save an IsotonicRegressionModel."""
+        from pyspark.jvm_bridge import get_bridge
+
         java_boundaries = _py2java(sc, self.boundaries.tolist())
         java_predictions = _py2java(sc, self.predictions.tolist())
-        assert sc._jvm is not None
-
-        java_model = sc._jvm.org.apache.spark.mllib.regression.IsotonicRegressionModel(
-            java_boundaries, java_predictions, self.isotonic
+        java_model = get_bridge().new(
+            "org.apache.spark.mllib.regression.IsotonicRegressionModel",
+            java_boundaries,
+            java_predictions,
+            self.isotonic,
         )
         java_model.save(sc._jsc.sc(), path)
 
@@ -854,10 +871,13 @@ class IsotonicRegressionModel(Saveable, Loader["IsotonicRegressionModel"]):
     @since("1.4.0")
     def load(cls, sc: SparkContext, path: str) -> "IsotonicRegressionModel":
         """Load an IsotonicRegressionModel."""
-        assert sc._jvm is not None
+        from pyspark.jvm_bridge import get_bridge
 
-        java_model = sc._jvm.org.apache.spark.mllib.regression.IsotonicRegressionModel.load(
-            sc._jsc.sc(), path
+        java_model = get_bridge().call_static(
+            "org.apache.spark.mllib.regression.IsotonicRegressionModel",
+            "load",
+            sc._jsc.sc(),
+            path,
         )
         py_boundaries = _java2py(sc, java_model.boundaryVector()).toArray()
         py_predictions = _java2py(sc, java_model.predictionVector()).toArray()

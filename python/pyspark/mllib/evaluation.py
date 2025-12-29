@@ -79,9 +79,11 @@ class BinaryClassificationMetrics(JavaModelWrapper):
         if numCol == 3:
             schema.add("weight", DoubleType(), False)
         df = sql_ctx.createDataFrame(scoreAndLabels, schema=schema)
-        assert sc._jvm is not None
-        java_class = sc._jvm.org.apache.spark.mllib.evaluation.BinaryClassificationMetrics
-        java_model = java_class(df._jdf)
+        from pyspark.jvm_bridge import get_bridge
+
+        java_model = get_bridge().new(
+            "org.apache.spark.mllib.evaluation.BinaryClassificationMetrics", df._jdf
+        )
         super().__init__(java_model)
 
     @property
@@ -155,9 +157,11 @@ class RegressionMetrics(JavaModelWrapper):
         if numCol == 3:
             schema.add("weight", DoubleType(), False)
         df = sql_ctx.createDataFrame(predictionAndObservations, schema=schema)
-        assert sc._jvm is not None
-        java_class = sc._jvm.org.apache.spark.mllib.evaluation.RegressionMetrics
-        java_model = java_class(df._jdf)
+        from pyspark.jvm_bridge import get_bridge
+
+        java_model = get_bridge().new(
+            "org.apache.spark.mllib.evaluation.RegressionMetrics", df._jdf
+        )
         super().__init__(java_model)
 
     @property
@@ -296,9 +300,11 @@ class MulticlassMetrics(JavaModelWrapper):
         if numCol == 4:
             schema.add("probability", ArrayType(DoubleType(), False), False)
         df = sql_ctx.createDataFrame(predictionAndLabels, schema)
-        assert sc._jvm is not None
-        java_class = sc._jvm.org.apache.spark.mllib.evaluation.MulticlassMetrics
-        java_model = java_class(df._jdf)
+        from pyspark.jvm_bridge import get_bridge
+
+        java_model = get_bridge().new(
+            "org.apache.spark.mllib.evaluation.MulticlassMetrics", df._jdf
+        )
         super().__init__(java_model)
 
     @since("1.4.0")
@@ -578,9 +584,11 @@ class MultilabelMetrics(JavaModelWrapper):
         df = sql_ctx.createDataFrame(
             predictionAndLabels, schema=sql_ctx.sparkSession._inferSchema(predictionAndLabels)
         )
-        assert sc._jvm is not None
-        java_class = sc._jvm.org.apache.spark.mllib.evaluation.MultilabelMetrics
-        java_model = java_class(df._jdf)
+        from pyspark.jvm_bridge import get_bridge
+
+        java_model = get_bridge().new(
+            "org.apache.spark.mllib.evaluation.MultilabelMetrics", df._jdf
+        )
         super().__init__(java_model)
 
     @since("1.4.0")

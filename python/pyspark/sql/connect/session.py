@@ -1203,8 +1203,15 @@ class SparkSession:
 
                 # Lastly only keep runtime configurations because other configurations are
                 # disallowed to set in the regular Spark Connect session.
-                utl = SparkContext._jvm.PythonSQLUtils  # type: ignore[union-attr]
-                runtime_conf_keys = [c._1() for c in utl.listRuntimeSQLConfigs()]
+                from pyspark.jvm_bridge import get_bridge
+
+                runtime_configs = get_bridge().call_static(
+                    "org.apache.spark.sql.api.python.PythonSQLUtils",
+                    "listRuntimeSQLConfigs",
+                )
+                runtime_conf_keys = [
+                    get_bridge().call(c, "_1") for c in runtime_configs
+                ]
                 new_opts = {k: opts[k] for k in opts if k in runtime_conf_keys}
                 opts.clear()
                 opts.update(new_opts)

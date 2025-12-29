@@ -211,15 +211,31 @@ class Py4JAdapter(BridgeAdapter):
         """
         self._gateway = gateway
 
+    # === Internal Helpers ===
+
+    def _navigate_to_class(self, class_name: str) -> Any:
+        """Navigate to a JVM class by fully qualified name.
+
+        Handles both regular classes (org.apache.spark.Foo) and nested/Scala
+        objects (org.apache.spark.Foo$Bar$) by treating both '.' and '$' as
+        separators for getattr navigation.
+        """
+        import re
+
+        # Split on both '.' and '$', keeping track of separators
+        # e.g., "org.apache.spark.Foo$Bar$" -> ["org", "apache", "spark", "Foo", "Bar", ""]
+        parts = re.split(r"[.$]", class_name)
+        cls = self._gateway.jvm
+        for part in parts:
+            if part:  # Skip empty parts (e.g., trailing $)
+                cls = getattr(cls, part)
+        return cls
+
     # === Object Lifecycle ===
 
     def new(self, class_name: str, *args: Any) -> Any:
         """Create a new JVM object."""
-        # Navigate to the class via JVM view
-        parts = class_name.split(".")
-        cls = self._gateway.jvm
-        for part in parts:
-            cls = getattr(cls, part)
+        cls = self._navigate_to_class(class_name)
         return cls(*args)
 
     def close(self) -> None:
@@ -244,10 +260,7 @@ class Py4JAdapter(BridgeAdapter):
 
     def call_static(self, class_name: str, method: str, *args: Any) -> Any:
         """Call a static method on a JVM class."""
-        parts = class_name.split(".")
-        cls = self._gateway.jvm
-        for part in parts:
-            cls = getattr(cls, part)
+        cls = self._navigate_to_class(class_name)
         method_obj = getattr(cls, method)
         return method_obj(*args)
 
@@ -263,18 +276,12 @@ class Py4JAdapter(BridgeAdapter):
 
     def get_static_field(self, class_name: str, name: str) -> Any:
         """Get a static field value."""
-        parts = class_name.split(".")
-        cls = self._gateway.jvm
-        for part in parts:
-            cls = getattr(cls, part)
+        cls = self._navigate_to_class(class_name)
         return getattr(cls, name)
 
     def set_static_field(self, class_name: str, name: str, value: Any) -> None:
         """Set a static field value."""
-        parts = class_name.split(".")
-        cls = self._gateway.jvm
-        for part in parts:
-            cls = getattr(cls, part)
+        cls = self._navigate_to_class(class_name)
         setattr(cls, name, value)
 
     # === Type Checking ===
@@ -289,11 +296,7 @@ class Py4JAdapter(BridgeAdapter):
 
     def new_array(self, element_class: str, length: int) -> Any:
         """Create a new JVM array."""
-        # Navigate to the class
-        parts = element_class.split(".")
-        cls = self._gateway.jvm
-        for part in parts:
-            cls = getattr(cls, part)
+        cls = self._navigate_to_class(element_class)
         return self._gateway.new_array(cls, length)
 
     def array_get(self, array_ref: Any, index: int) -> Any:

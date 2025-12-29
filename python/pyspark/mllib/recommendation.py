@@ -218,9 +218,12 @@ class MatrixFactorizationModel(
     @since("1.3.1")
     def load(cls, sc: SparkContext, path: str) -> "MatrixFactorizationModel":
         """Load a model from the given path"""
+        from pyspark.jvm_bridge import get_bridge
+
         model = cls._load_java(sc, path)
-        assert sc._jvm is not None
-        wrapper = sc._jvm.org.apache.spark.mllib.api.python.MatrixFactorizationModelWrapper(model)
+        wrapper = get_bridge().new(
+            "org.apache.spark.mllib.api.python.MatrixFactorizationModelWrapper", model
+        )
         return MatrixFactorizationModel(wrapper)
 
 
