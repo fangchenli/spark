@@ -22,9 +22,8 @@ Package for distributed linear algebra.
 import sys
 from typing import Any, Generic, Optional, Tuple, TypeVar, Union, TYPE_CHECKING
 
-from py4j.java_gateway import JavaObject
-
 from pyspark import RDD, since
+from pyspark.jvm_bridge import is_java_object
 from pyspark.mllib.common import callMLlibFunc, JavaModelWrapper
 from pyspark.mllib.linalg import _convert_to_vector, DenseMatrix, Matrix, QRDecomposition, Vector
 from pyspark.mllib.stat import MultivariateStatisticalSummary
@@ -124,7 +123,7 @@ class RowMatrix(DistributedMatrix):
             java_matrix = callMLlibFunc("createRowMatrix", rows, int(numRows), int(numCols))
         elif isinstance(rows, DataFrame):
             java_matrix = callMLlibFunc("createRowMatrix", rows, int(numRows), int(numCols))
-        elif isinstance(rows, JavaObject) and rows.getClass().getSimpleName() == "RowMatrix":
+        elif is_java_object(rows) and rows.getClass().getSimpleName() == "RowMatrix":
             java_matrix = rows
         else:
             raise TypeError("rows should be an RDD of vectors, got %s" % type(rows))
@@ -632,7 +631,7 @@ class IndexedRowMatrix(DistributedMatrix):
             )
         elif isinstance(rows, DataFrame):
             java_matrix = callMLlibFunc("createIndexedRowMatrix", rows, int(numRows), int(numCols))
-        elif isinstance(rows, JavaObject) and rows.getClass().getSimpleName() == "IndexedRowMatrix":
+        elif is_java_object(rows) and rows.getClass().getSimpleName() == "IndexedRowMatrix":
             java_matrix = rows
         else:
             raise TypeError(
@@ -989,7 +988,7 @@ class CoordinateMatrix(DistributedMatrix):
                 "createCoordinateMatrix", entries.toDF(), int(numRows), int(numCols)
             )
         elif (
-            isinstance(entries, JavaObject)
+            is_java_object(entries)
             and entries.getClass().getSimpleName() == "CoordinateMatrix"
         ):
             java_matrix = entries
@@ -1277,7 +1276,7 @@ class BlockMatrix(DistributedMatrix):
                 int(numRows),
                 int(numCols),
             )
-        elif isinstance(blocks, JavaObject) and blocks.getClass().getSimpleName() == "BlockMatrix":
+        elif is_java_object(blocks) and blocks.getClass().getSimpleName() == "BlockMatrix":
             java_matrix = blocks
         else:
             raise TypeError(

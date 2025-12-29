@@ -19,9 +19,9 @@ import sys
 from typing import cast, overload, List, Optional, TYPE_CHECKING, Union
 
 from numpy import ndarray
-from py4j.java_gateway import JavaObject
 
 from pyspark.core.rdd import RDD
+from pyspark.jvm_bridge import JavaObjectRef
 from pyspark.mllib.common import callMLlibFunc, JavaModelWrapper
 from pyspark.mllib.linalg import Matrix, Vector, _convert_to_vector
 from pyspark.mllib.regression import LabeledPoint
@@ -40,28 +40,28 @@ class MultivariateStatisticalSummary(JavaModelWrapper):
     """
 
     def mean(self) -> ndarray:
-        return cast(JavaObject, self.call("mean")).toArray()
+        return cast(JavaObjectRef, self.call("mean")).toArray()
 
     def variance(self) -> ndarray:
-        return cast(JavaObject, self.call("variance")).toArray()
+        return cast(JavaObjectRef, self.call("variance")).toArray()
 
     def count(self) -> int:
         return int(self.call("count"))
 
     def numNonzeros(self) -> ndarray:
-        return cast(JavaObject, self.call("numNonzeros")).toArray()
+        return cast(JavaObjectRef, self.call("numNonzeros")).toArray()
 
     def max(self) -> ndarray:
-        return cast(JavaObject, self.call("max")).toArray()
+        return cast(JavaObjectRef, self.call("max")).toArray()
 
     def min(self) -> ndarray:
-        return cast(JavaObject, self.call("min")).toArray()
+        return cast(JavaObjectRef, self.call("min")).toArray()
 
     def normL1(self) -> ndarray:
-        return cast(JavaObject, self.call("normL1")).toArray()
+        return cast(JavaObjectRef, self.call("normL1")).toArray()
 
     def normL2(self) -> ndarray:
-        return cast(JavaObject, self.call("normL2")).toArray()
+        return cast(JavaObjectRef, self.call("normL2")).toArray()
 
 
 class Statistics:
@@ -189,7 +189,7 @@ class Statistics:
 
         if not y:
             return cast(
-                JavaObject, callMLlibFunc("corr", x.map(_convert_to_vector), method)
+                JavaObjectRef, callMLlibFunc("corr", x.map(_convert_to_vector), method)
             ).toArray()
         else:
             return cast(

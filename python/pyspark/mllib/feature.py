@@ -22,17 +22,15 @@ import sys
 import warnings
 from typing import Dict, Hashable, Iterable, List, Optional, Tuple, Union, overload, TYPE_CHECKING
 
-from py4j.protocol import Py4JJavaError
-
 from pyspark import since
 from pyspark.core.rdd import RDD
+from pyspark.jvm_bridge import is_java_exception, JavaMapRef
 from pyspark.mllib.common import callMLlibFunc, JavaModelWrapper
 from pyspark.mllib.linalg import Vectors, _convert_to_vector
 from pyspark.mllib.util import JavaLoader, JavaSaveable
 from pyspark.core.context import SparkContext
 from pyspark.mllib.linalg import Vector
 from pyspark.mllib.regression import LabeledPoint
-from py4j.java_collections import JavaMap
 
 if TYPE_CHECKING:
     from pyspark.mllib._typing import VectorLike
@@ -808,8 +806,10 @@ class Word2VecModel(JavaVectorTransformer, JavaSaveable, JavaLoader["Word2VecMod
         """
         try:
             return self.call("transform", word)
-        except Py4JJavaError:
-            raise ValueError("%s not found" % word)
+        except Exception as e:
+            if is_java_exception(e):
+                raise ValueError("%s not found" % word)
+            raise
 
     def findSynonyms(self, word: Union[str, "VectorLike"], num: int) -> Iterable[Tuple[str, float]]:
         """
@@ -840,7 +840,7 @@ class Word2VecModel(JavaVectorTransformer, JavaSaveable, JavaLoader["Word2VecMod
         return zip(words, similarity)
 
     @since("1.4.0")
-    def getVectors(self) -> "JavaMap":
+    def getVectors(self) -> JavaMapRef:
         """
         Returns a map of words to their vector representations.
         """

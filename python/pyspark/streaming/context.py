@@ -16,9 +16,7 @@
 #
 from typing import Any, Callable, List, Optional, TypeVar
 
-from py4j.java_gateway import java_import, JavaObject
-
-from pyspark.jvm_bridge import get_bridge
+from pyspark.jvm_bridge import get_bridge, JavaObjectRef
 
 from pyspark import RDD, SparkConf
 from pyspark.serializers import NoOpSerializer, UTF8Deserializer, CloudPickleSerializer
@@ -69,7 +67,7 @@ class StreamingContext:
         self,
         sparkContext: SparkContext,
         batchDuration: Optional[int] = None,
-        jssc: Optional[JavaObject] = None,
+        jssc: Optional[JavaObjectRef] = None,
     ):
         warnings.warn(
             "DStream is deprecated as of Spark 3.4.0. Migrate to Structured Streaming.",
@@ -79,7 +77,7 @@ class StreamingContext:
         self._jvm = self._sc._jvm
         self._jssc = jssc or self._initialize_context(self._sc, batchDuration)
 
-    def _initialize_context(self, sc: SparkContext, duration: Optional[int]) -> JavaObject:
+    def _initialize_context(self, sc: SparkContext, duration: Optional[int]) -> JavaObjectRef:
         self._ensure_initialized()
         assert duration is not None
         return get_bridge().new(
@@ -88,7 +86,7 @@ class StreamingContext:
             self._jduration(duration),
         )
 
-    def _jduration(self, seconds: int) -> JavaObject:
+    def _jduration(self, seconds: int) -> JavaObjectRef:
         """
         Create Duration object given number of seconds
         """
@@ -101,9 +99,10 @@ class StreamingContext:
 
         assert gw is not None
 
-        java_import(gw.jvm, "org.apache.spark.streaming.*")
-        java_import(gw.jvm, "org.apache.spark.streaming.api.java.*")
-        java_import(gw.jvm, "org.apache.spark.streaming.api.python.*")
+        bridge = get_bridge()
+        bridge.java_import("org.apache.spark.streaming.*")
+        bridge.java_import("org.apache.spark.streaming.api.java.*")
+        bridge.java_import("org.apache.spark.streaming.api.python.*")
 
         from pyspark.java_gateway import ensure_callback_server_started
 

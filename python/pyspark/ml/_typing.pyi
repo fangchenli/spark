@@ -20,11 +20,11 @@ from typing import Any, Dict, List, TypeVar, Tuple, Union
 from typing_extensions import Literal
 
 from numpy import ndarray
-from py4j.java_gateway import JavaObject
 
 import pyspark.ml.base
 import pyspark.ml.param
 import pyspark.ml.util
+from pyspark.jvm_bridge import JavaObjectRef
 from pyspark.ml.linalg import Vector
 import pyspark.ml.wrapper
 
@@ -37,7 +37,7 @@ M = TypeVar("M", bound=pyspark.ml.base.Transformer)
 JM = TypeVar("JM", bound=pyspark.ml.wrapper.JavaTransformer)
 C = TypeVar("C", bound=type)
 
-JavaObjectOrPickleDump = Union[JavaObject, bytearray, bytes]
+JavaObjectOrPickleDump = Union[JavaObjectRef, bytearray, bytes]
 BinaryClassificationEvaluatorMetricType = Union[Literal["areaUnderROC"], Literal["areaUnderPR"]]
 RegressionEvaluatorMetricType = Union[
     Literal["rmse"], Literal["mse"], Literal["r2"], Literal["mae"], Literal["var"]

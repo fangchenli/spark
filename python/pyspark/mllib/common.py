@@ -21,12 +21,16 @@ if TYPE_CHECKING:
     from pyspark.mllib._typing import C, JavaObjectOrPickleDump
 
 import py4j.protocol
-from py4j.protocol import Py4JJavaError
-from py4j.java_gateway import JavaObject
-from py4j.java_collections import JavaArray, JavaList
 
 import pyspark.core.context
 from pyspark import RDD, SparkContext
+from pyspark.jvm_bridge import (
+    JavaObjectRef,
+    is_java_array,
+    is_java_exception,
+    is_java_list,
+    is_java_object,
+)
 from pyspark.serializers import CPickleSerializer, AutoBatchedSerializer
 from pyspark.sql import DataFrame, SparkSession
 
@@ -61,7 +65,7 @@ _picklable_classes = [
 
 
 # this will call the MLlib version of pythonToJava()
-def _to_java_object_rdd(rdd: RDD) -> JavaObject:
+def _to_java_object_rdd(rdd: RDD) -> JavaObjectRef:
     """Return a JavaRDD of Object by unpickling
 
     It will convert each Python object into Java object by Pickle, whenever the
@@ -75,7 +79,7 @@ def _to_java_object_rdd(rdd: RDD) -> JavaObject:
     )
 
 
-def _py2java(sc: SparkContext, obj: Any) -> JavaObject:
+def _py2java(sc: SparkContext, obj: Any) -> JavaObjectRef:
     """Convert Python object into Java"""
     from pyspark.jvm_bridge import get_bridge
 
@@ -87,7 +91,7 @@ def _py2java(sc: SparkContext, obj: Any) -> JavaObject:
         obj = obj._jsc
     elif isinstance(obj, list):
         obj = [_py2java(sc, x) for x in obj]
-    elif isinstance(obj, JavaObject):
+    elif is_java_object(obj):
         pass
     elif isinstance(obj, (int, float, bool, bytes, str)):
         pass
@@ -102,7 +106,7 @@ def _py2java(sc: SparkContext, obj: Any) -> JavaObject:
 def _java2py(sc: SparkContext, r: "JavaObjectOrPickleDump", encoding: str = "bytes") -> Any:
     from pyspark.jvm_bridge import get_bridge
 
-    if isinstance(r, JavaObject):
+    if is_java_object(r):
         clsName = r.getClass().getSimpleName()
         # convert RDD into JavaRDD
         if clsName != "JavaRDD" and clsName.endswith("RDD"):
@@ -122,11 +126,14 @@ def _java2py(sc: SparkContext, r: "JavaObjectOrPickleDump", encoding: str = "byt
 
         if clsName in _picklable_classes:
             r = bridge.call_static("org.apache.spark.mllib.api.python.SerDe", "dumps", r)
-        elif isinstance(r, (JavaArray, JavaList)):
+        elif is_java_array(r) or is_java_list(r):
             try:
                 r = bridge.call_static("org.apache.spark.mllib.api.python.SerDe", "dumps", r)
-            except Py4JJavaError:
-                pass  # not pickable
+            except Exception as e:
+                if is_java_exception(e):
+                    pass  # not pickable
+                else:
+                    raise
 
     if isinstance(r, (bytearray, bytes)):
         r = CPickleSerializer().loads(bytes(r), encoding=encoding)
@@ -157,7 +164,7 @@ class JavaModelWrapper:
     Wrapper for the model in JVM
     """
 
-    def __init__(self, java_model: JavaObject):
+    def __init__(self, java_model: JavaObjectRef):
         self._sc = SparkContext.getOrCreate()
         self._java_model = java_model
 

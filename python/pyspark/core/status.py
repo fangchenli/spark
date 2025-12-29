@@ -17,10 +17,9 @@
 
 __all__ = ["SparkJobInfo", "SparkStageInfo", "StatusTracker"]
 
-from typing import List, NamedTuple, Optional
+from typing import Any, List, NamedTuple, Optional
 
-from py4j.java_collections import JavaArray
-from py4j.java_gateway import JavaObject
+from pyspark.jvm_bridge import JavaArrayRef, JavaObjectRef
 
 
 class SparkJobInfo(NamedTuple):
@@ -29,7 +28,7 @@ class SparkJobInfo(NamedTuple):
     """
 
     jobId: int
-    stageIds: JavaArray
+    stageIds: JavaArrayRef
     status: str
 
 
@@ -62,7 +61,7 @@ class StatusTracker:
     `spark.ui.retainedStages` stages and `spark.ui.retainedJobs` jobs.
     """
 
-    def __init__(self, jtracker: JavaObject):
+    def __init__(self, jtracker: JavaObjectRef):
         self._jtracker = jtracker
 
     def getJobIdsForGroup(self, jobGroup: Optional[str] = None) -> List[int]:

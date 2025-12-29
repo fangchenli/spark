@@ -35,10 +35,7 @@ from typing import (
     overload,
 )
 
-from py4j.protocol import Py4JJavaError
-from py4j.java_gateway import JavaObject
-
-from pyspark.jvm_bridge import get_bridge
+from pyspark.jvm_bridge import get_bridge, is_java_exception, JavaObjectRef
 from pyspark.storagelevel import StorageLevel
 from pyspark.streaming.util import rddToFileName, TransformFunction
 from pyspark.core.rdd import portable_hash, RDD
@@ -80,7 +77,7 @@ class DStream(Generic[T_co]):
 
     def __init__(
         self,
-        jdstream: JavaObject,
+        jdstream: JavaObjectRef,
         ssc: "StreamingContext",
         jrdd_deserializer: "Serializer",
     ):
@@ -361,10 +358,12 @@ class DStream(Generic[T_co]):
             path = rddToFileName(prefix, suffix, t)
             try:
                 rdd.saveAsTextFile(path)
-            except Py4JJavaError as e:
+            except Exception as e:
                 # after recovered from checkpointing, the foreachRDD may
                 # be called twice
-                if "FileAlreadyExistsException" not in str(e):
+                if is_java_exception(e) and "FileAlreadyExistsException" in str(e):
+                    pass
+                else:
                     raise
 
         return self.foreachRDD(saveAsTextFile)
@@ -582,7 +581,7 @@ class DStream(Generic[T_co]):
             numPartitions = self._sc.defaultParallelism
         return self.transformWith(lambda a, b: a.fullOuterJoin(b, numPartitions), other)
 
-    def _jtime(self, timestamp: Union[datetime, int, float]) -> JavaObject:
+    def _jtime(self, timestamp: Union[datetime, int, float]) -> JavaObjectRef:
         """Convert datetime or unix_timestamp into Time"""
         if isinstance(timestamp, datetime):
             timestamp = time.mktime(timestamp.timetuple())
@@ -931,7 +930,7 @@ class TransformedDStream(DStream[U]):
             self.func = func
 
     @property
-    def _jdstream(self) -> JavaObject:
+    def _jdstream(self) -> JavaObjectRef:
         if self._jdstream_val is not None:
             return self._jdstream_val
 
