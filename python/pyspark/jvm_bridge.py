@@ -32,10 +32,261 @@ Usage:
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Any, TYPE_CHECKING
+from typing import Any, Dict, Iterator, List, Protocol, Tuple, TYPE_CHECKING, Union, runtime_checkable
 
 if TYPE_CHECKING:
     from py4j.java_gateway import JavaGateway
+
+
+# =============================================================================
+# Protocol Types for Type Annotations
+# =============================================================================
+
+
+@runtime_checkable
+class JavaObjectRef(Protocol):
+    """Protocol for JVM object references.
+
+    Any object that represents a JVM reference should satisfy this protocol.
+    Both Py4J's JavaObject and Gatun's JavaObject work with this.
+
+    Use this type instead of importing py4j.java_gateway.JavaObject directly.
+    """
+
+    def __repr__(self) -> str:
+        ...
+
+
+@runtime_checkable
+class JavaArrayRef(Protocol):
+    """Protocol for JVM array references.
+
+    Supports indexing and length operations.
+    """
+
+    def __getitem__(self, index: int) -> Any:
+        ...
+
+    def __setitem__(self, index: int, value: Any) -> None:
+        ...
+
+    def __len__(self) -> int:
+        ...
+
+
+@runtime_checkable
+class JavaMapRef(Protocol):
+    """Protocol for JVM Map references.
+
+    Supports dict-like operations.
+    """
+
+    def __iter__(self) -> Iterator[Any]:
+        ...
+
+    def __getitem__(self, key: Any) -> Any:
+        ...
+
+    def keys(self) -> Any:
+        ...
+
+    def values(self) -> Any:
+        ...
+
+    def items(self) -> Any:
+        ...
+
+
+@runtime_checkable
+class JavaListRef(Protocol):
+    """Protocol for JVM List references.
+
+    Supports list-like operations.
+    """
+
+    def __iter__(self) -> Iterator[Any]:
+        ...
+
+    def __getitem__(self, index: int) -> Any:
+        ...
+
+    def __len__(self) -> int:
+        ...
+
+
+# =============================================================================
+# Exception Types
+# =============================================================================
+
+
+class JavaError(Exception):
+    """Base exception for errors originating from the JVM.
+
+    This is a bridge-agnostic exception that wraps Java exceptions.
+    Use this instead of importing py4j.protocol.Py4JJavaError directly.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        java_exception: Any = None,
+        java_class: str = "",
+        stack_trace: str = "",
+    ):
+        super().__init__(message)
+        self.java_exception = java_exception
+        self.java_class = java_class
+        self.stack_trace = stack_trace
+
+    def getMessage(self) -> str:
+        """Get the Java exception message."""
+        if self.java_exception is not None and hasattr(self.java_exception, "getMessage"):
+            return self.java_exception.getMessage() or ""
+        return str(self)
+
+    def getCause(self) -> Any:
+        """Get the cause of this exception."""
+        if self.java_exception is not None and hasattr(self.java_exception, "getCause"):
+            return self.java_exception.getCause()
+        return None
+
+    def getStackTrace(self) -> Any:
+        """Get the Java stack trace."""
+        if self.java_exception is not None and hasattr(self.java_exception, "getStackTrace"):
+            return self.java_exception.getStackTrace()
+        return None
+
+
+class JavaConnectionError(Exception):
+    """Exception for bridge connection errors.
+
+    Raised when the Python-JVM bridge connection fails.
+    """
+
+    pass
+
+
+# =============================================================================
+# Type Checking Utilities
+# =============================================================================
+
+
+def is_java_object(obj: Any) -> bool:
+    """Check if an object is a JVM object reference.
+
+    Works with both Py4J and Gatun object references.
+    """
+    # Check for py4j JavaObject
+    try:
+        from py4j.java_gateway import JavaObject
+
+        if isinstance(obj, JavaObject):
+            return True
+    except ImportError:
+        pass
+
+    # Check protocol
+    return isinstance(obj, JavaObjectRef)
+
+
+def is_java_array(obj: Any) -> bool:
+    """Check if an object is a JVM array reference."""
+    try:
+        from py4j.java_collections import JavaArray
+
+        if isinstance(obj, JavaArray):
+            return True
+    except ImportError:
+        pass
+
+    return isinstance(obj, JavaArrayRef)
+
+
+def is_java_list(obj: Any) -> bool:
+    """Check if an object is a JVM List reference."""
+    try:
+        from py4j.java_collections import JavaList
+
+        if isinstance(obj, JavaList):
+            return True
+    except ImportError:
+        pass
+
+    return isinstance(obj, JavaListRef)
+
+
+def is_java_map(obj: Any) -> bool:
+    """Check if an object is a JVM Map reference."""
+    try:
+        from py4j.java_collections import JavaMap
+
+        if isinstance(obj, JavaMap):
+            return True
+    except ImportError:
+        pass
+
+    return isinstance(obj, JavaMapRef)
+
+
+def convert_java_map_to_dict(java_map: Any) -> Dict[Any, Any]:
+    """Convert a Java Map to a Python dict."""
+    bridge = get_bridge()
+    result = {}
+    entry_set = bridge.call(java_map, "entrySet")
+    iterator = bridge.call(entry_set, "iterator")
+    while bridge.call(iterator, "hasNext"):
+        entry = bridge.call(iterator, "next")
+        key = bridge.call(entry, "getKey")
+        value = bridge.call(entry, "getValue")
+        result[key] = value
+    return result
+
+
+def convert_java_list_to_list(java_list: Any) -> List[Any]:
+    """Convert a Java List to a Python list."""
+    bridge = get_bridge()
+    size = bridge.call(java_list, "size")
+    return [bridge.call(java_list, "get", i) for i in range(size)]
+
+
+def convert_java_array_to_list(java_array: Any) -> List[Any]:
+    """Convert a Java array to a Python list."""
+    return list(java_array)
+
+
+def is_java_exception(exc: BaseException) -> bool:
+    """Check if an exception is a Java exception from the bridge.
+
+    Works with both Py4J's Py4JJavaError and other bridge exceptions.
+    """
+    try:
+        from py4j.protocol import Py4JJavaError
+
+        if isinstance(exc, Py4JJavaError):
+            return True
+    except ImportError:
+        pass
+
+    return isinstance(exc, JavaError)
+
+
+def get_java_exception(exc: BaseException) -> Any:
+    """Get the underlying Java exception from a bridge exception.
+
+    Returns the Java exception object, or None if not a Java exception.
+    """
+    try:
+        from py4j.protocol import Py4JJavaError
+
+        if isinstance(exc, Py4JJavaError):
+            return exc.java_exception
+    except ImportError:
+        pass
+
+    if isinstance(exc, JavaError):
+        return exc.java_exception
+
+    return None
 
 
 # =============================================================================

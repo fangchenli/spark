@@ -44,16 +44,22 @@ from typing import (
     Set,
 )
 
-from py4j.java_collections import JavaMap
-from py4j.protocol import Py4JError
-
 from pyspark import accumulators
 from pyspark.conf import SparkConf
 from pyspark.accumulators import Accumulator
 from pyspark.core.broadcast import Broadcast, BroadcastPickleRegistry
 from pyspark.core.files import SparkFiles
 from pyspark.java_gateway import launch_gateway
-from pyspark.jvm_bridge import BridgeAdapter, create_bridge_from_gateway, get_bridge
+from pyspark.jvm_bridge import (
+    BridgeAdapter,
+    JavaConnectionError,
+    JavaMapRef,
+    JavaObjectRef,
+    convert_java_map_to_dict,
+    create_bridge_from_gateway,
+    get_bridge,
+    is_java_map,
+)
 from pyspark.serializers import (
     CPickleSerializer,
     BatchedSerializer,
@@ -73,7 +79,8 @@ from pyspark.traceback_utils import CallSite, first_spark_call
 from pyspark.core.status import StatusTracker
 from pyspark.profiler import ProfilerCollector, BasicProfiler, UDFBasicProfiler, MemoryProfiler
 from pyspark.errors import PySparkRuntimeError
-from py4j.java_gateway import JavaGateway, JavaObject, JVMView
+
+from py4j.java_gateway import JavaGateway
 
 if TYPE_CHECKING:
     from pyspark.accumulators import AccumulatorParam
@@ -179,7 +186,7 @@ class SparkContext:
     PACKAGE_EXTENSIONS: Iterable[str] = (".zip", ".egg", ".jar")
 
     @_ClassProperty
-    def _jvm(cls) -> Optional[JVMView]:
+    def _jvm(cls) -> Optional[Any]:
         """Get the JVM view for backward compatibility.
 
         .. deprecated::
@@ -200,7 +207,7 @@ class SparkContext:
         serializer: "Serializer" = CPickleSerializer(),
         conf: Optional[SparkConf] = None,
         gateway: Optional[JavaGateway] = None,
-        jsc: Optional[JavaObject] = None,
+        jsc: Optional[JavaObjectRef] = None,
         profiler_cls: Type[BasicProfiler] = BasicProfiler,
         udf_profiler_cls: Type[UDFBasicProfiler] = UDFBasicProfiler,
         memory_profiler_cls: Type[MemoryProfiler] = MemoryProfiler,
@@ -253,7 +260,7 @@ class SparkContext:
         batchSize: int,
         serializer: Serializer,
         conf: Optional[SparkConf],
-        jsc: JavaObject,
+        jsc: JavaObjectRef,
         profiler_cls: Type[BasicProfiler] = BasicProfiler,
         udf_profiler_cls: Type[UDFBasicProfiler] = UDFBasicProfiler,
         memory_profiler_cls: Type[MemoryProfiler] = MemoryProfiler,
@@ -470,7 +477,7 @@ class SparkContext:
             sc=self
         )
 
-    def _initialize_context(self, jconf: JavaObject) -> JavaObject:
+    def _initialize_context(self, jconf: JavaObjectRef) -> JavaObjectRef:
         """
         Initialize SparkContext in function to allow subclass specific initialization
         """
@@ -729,8 +736,9 @@ class SparkContext:
         if getattr(self, "_jsc", None):
             try:
                 self._jsc.stop()
-            except Py4JError:
+            except Exception:
                 # Case: SPARK-18523
+                # Catch broad exception to handle both Py4JError and other connection errors
                 warnings.warn(
                     "Unable to cleanly shutdown Spark JVM process."
                     " It is possible that the process has crashed,"
@@ -890,7 +898,7 @@ class SparkContext:
         )
         serializer = BatchedSerializer(self._unbatched_serializer, batchSize)
 
-        def reader_func(temp_filename: str) -> JavaObject:
+        def reader_func(temp_filename: str) -> JavaObjectRef:
             return get_bridge().call_static(
                 "org.apache.spark.api.python.PythonRDD",
                 "readRDDFromFile",
@@ -899,7 +907,7 @@ class SparkContext:
                 numSlices,
             )
 
-        def createRDDServer() -> JavaObject:
+        def createRDDServer() -> JavaObjectRef:
             bridge = get_bridge()
             sc = bridge.call(self._jsc, "sc")
             return bridge.new(
@@ -915,7 +923,7 @@ class SparkContext:
         serializer: Serializer,
         reader_func: Callable,
         server_func: Callable,
-    ) -> JavaObject:
+    ) -> JavaObjectRef:
         """
         Using Py4J to send a large dataset to the jvm is slow, so we use either a file
         or a socket if we have encryption enabled.
@@ -1259,7 +1267,7 @@ class SparkContext:
         """
         return RDD(self._jsc.binaryRecords(path, recordLength), self, NoOpSerializer())
 
-    def _dictToJavaMap(self, d: Optional[Dict[str, str]]) -> JavaMap:
+    def _dictToJavaMap(self, d: Optional[Dict[str, str]]) -> JavaMapRef:
         bridge = get_bridge()
         jm = bridge.new("java.util.HashMap")
         if not d:
@@ -2167,7 +2175,7 @@ class SparkContext:
             return self._jsc.sc().getCheckpointDir().get()
         return None
 
-    def _getJavaStorageLevel(self, storageLevel: StorageLevel) -> JavaObject:
+    def _getJavaStorageLevel(self, storageLevel: StorageLevel) -> JavaObjectRef:
         """
         Returns a Java StorageLevel based on a pyspark.StorageLevel.
         """
