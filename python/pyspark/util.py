@@ -429,9 +429,9 @@ def inheritable_thread_target(f: Optional[Union[Callable, "SparkSession"]] = Non
     # Non Spark Connect with SparkSession or Callable
     from pyspark.sql import SparkSession
     from pyspark import SparkContext
-    from py4j.clientserver import ClientServer
+    from pyspark.jvm_bridge import get_bridge
 
-    if isinstance(SparkContext._gateway, ClientServer):
+    if SparkContext._bridge is not None and get_bridge().is_pinned_thread_mode():
         # Here's when the pinned-thread mode (PYSPARK_PIN_THREAD) is on.
 
         if isinstance(f, SparkSession):
@@ -568,10 +568,10 @@ class InheritableThread(threading.Thread):
         else:
             # Non Spark Connect
             from pyspark import SparkContext
-            from py4j.clientserver import ClientServer
+            from pyspark.jvm_bridge import get_bridge
 
             self._session = session  # type: ignore[assignment]
-            if isinstance(SparkContext._gateway, ClientServer):
+            if SparkContext._bridge is not None and get_bridge().is_pinned_thread_mode():
                 # Here's when the pinned-thread mode (PYSPARK_PIN_THREAD) is on.
                 def copy_local_properties(*a: Any, **k: Any) -> Any:
                     # self._props is set before starting the thread to match the behavior with JVM.
@@ -602,9 +602,9 @@ class InheritableThread(threading.Thread):
         else:
             # Non Spark Connect
             from pyspark import SparkContext
-            from py4j.clientserver import ClientServer
+            from pyspark.jvm_bridge import get_bridge
 
-            if isinstance(SparkContext._gateway, ClientServer):
+            if SparkContext._bridge is not None and get_bridge().is_pinned_thread_mode():
                 # Here's when the pinned-thread mode (PYSPARK_PIN_THREAD) is on.
 
                 # Local property copy should happen in Thread.start to mimic JVM's behavior.

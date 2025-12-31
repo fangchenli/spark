@@ -727,14 +727,14 @@ def _test() -> None:
     import sys
     from pyspark.sql import SparkSession
     import pyspark.sql.streaming.query
-    from py4j.protocol import Py4JError
 
     os.chdir(os.environ["SPARK_HOME"])
 
     globs = pyspark.sql.streaming.query.__dict__.copy()
     try:
         spark = SparkSession._getActiveSessionOrCreate()
-    except Py4JError:  # noqa: F821
+    except Exception:
+        # Handle protocol errors (e.g., Py4JError) when no active session exists
         spark = SparkSession(sc)  # type: ignore[name-defined] # noqa: F821
 
     globs["spark"] = spark

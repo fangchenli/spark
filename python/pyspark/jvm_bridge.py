@@ -503,6 +503,64 @@ class BridgeAdapter(ABC):
         """
         ...
 
+    # === Exception Handling ===
+
+    @abstractmethod
+    def get_java_exception_class(self) -> type:
+        """Get the exception class used for Java exceptions.
+
+        Returns:
+            The exception class that is raised when Java throws an exception.
+            For Py4J this is Py4JJavaError.
+
+        This allows code to catch Java exceptions in a bridge-agnostic way:
+
+            try:
+                bridge.call(obj, "method")
+            except bridge.get_java_exception_class() as e:
+                java_exc = bridge.extract_java_exception(e)
+        """
+        ...
+
+    @abstractmethod
+    def get_protocol_error_class(self) -> type:
+        """Get the exception class used for protocol errors.
+
+        Returns:
+            The exception class that is raised for protocol-level errors.
+            For Py4J this is Py4JError.
+
+        Protocol errors are typically connection or serialization issues,
+        not Java exceptions.
+        """
+        ...
+
+    @abstractmethod
+    def extract_java_exception(self, exc: BaseException) -> Any:
+        """Extract the Java exception object from a bridge exception.
+
+        Args:
+            exc: The caught exception (e.g., Py4JJavaError)
+
+        Returns:
+            The underlying Java exception object, or None if not a Java exception.
+        """
+        ...
+
+    @abstractmethod
+    def is_pinned_thread_mode(self) -> bool:
+        """Check if the bridge is running in pinned-thread mode.
+
+        Returns:
+            True if the bridge uses pinned threads (ClientServer in Py4J),
+            False otherwise.
+
+        In pinned-thread mode, each Python thread is bound to a specific
+        Java thread, which is necessary for certain operations like
+        local property inheritance.
+        """
+        ...
+
 
 # =============================================================================
 # Py4J Adapter
@@ -651,6 +709,34 @@ class Py4JAdapter(BridgeAdapter):
         from py4j.protocol import register_input_converter
 
         register_input_converter(converter, prepend=prepend)
+
+    # === Exception Handling ===
+
+    def get_java_exception_class(self) -> type:
+        """Get the exception class used for Java exceptions."""
+        from py4j.protocol import Py4JJavaError
+
+        return Py4JJavaError
+
+    def get_protocol_error_class(self) -> type:
+        """Get the exception class used for protocol errors."""
+        from py4j.protocol import Py4JError
+
+        return Py4JError
+
+    def extract_java_exception(self, exc: BaseException) -> Any:
+        """Extract the Java exception object from a bridge exception."""
+        from py4j.protocol import Py4JJavaError
+
+        if isinstance(exc, Py4JJavaError):
+            return exc.java_exception
+        return None
+
+    def is_pinned_thread_mode(self) -> bool:
+        """Check if the bridge is running in pinned-thread mode."""
+        from py4j.clientserver import ClientServer
+
+        return isinstance(self._gateway, ClientServer)
 
 
 # =============================================================================

@@ -41,8 +41,12 @@ from pyspark.errors.exceptions.base import (
 )
 
 if TYPE_CHECKING:
-    from py4j.protocol import Py4JJavaError
-    from py4j.java_gateway import JavaObject
+    from pyspark.jvm_bridge import JavaObjectRef
+
+    # Type alias for backward compatibility in type annotations
+    # This represents a Java exception object from the JVM
+    Py4JJavaError = JavaObjectRef
+    JavaObject = JavaObjectRef
 
 
 class CapturedException(PySparkException):
@@ -54,7 +58,6 @@ class CapturedException(PySparkException):
         origin: Optional["Py4JJavaError"] = None,
     ):
         from pyspark import SparkContext
-        from py4j.protocol import Py4JJavaError
 
         # desc & stackTrace vs origin are mutually exclusive.
         # cause is optional.
@@ -62,7 +65,7 @@ class CapturedException(PySparkException):
             origin is None and desc is not None and stackTrace is not None
         )
 
-        self._desc = desc if desc is not None else cast(Py4JJavaError, origin).getMessage()
+        self._desc = desc if desc is not None else origin.getMessage()
         if self._desc is None:
             self._desc = ""
         from pyspark.jvm_bridge import get_bridge
@@ -255,32 +258,33 @@ def _convert_exception(e: "Py4JJavaError") -> CapturedException:
 
 def capture_sql_exception(f: Callable[..., Any]) -> Callable[..., Any]:
     def deco(*a: Any, **kw: Any) -> Any:
-        from py4j.protocol import Py4JJavaError
+        from pyspark.jvm_bridge import get_bridge
 
+        bridge = get_bridge()
         try:
             return f(*a, **kw)
-        except Py4JJavaError as e:
-            converted = convert_exception(e.java_exception)
-            if not isinstance(converted, UnknownException):
-                # Hide where the exception came from that shows a non-Pythonic
-                # JVM exception message.
-                raise converted from None
-            else:
-                raise
+        except Exception as e:
+            java_exc = bridge.extract_java_exception(e)
+            if java_exc is not None:
+                converted = convert_exception(java_exc)
+                if not isinstance(converted, UnknownException):
+                    # Hide where the exception came from that shows a non-Pythonic
+                    # JVM exception message.
+                    raise converted from None
+            raise
 
     return deco
 
 
 @contextmanager
 def unwrap_spark_exception() -> Iterator[Any]:
-    from py4j.protocol import Py4JJavaError
     from pyspark.jvm_bridge import get_bridge
 
     try:
         yield
-    except Py4JJavaError as e:
-        je: "Py4JJavaError" = e.java_exception
+    except Exception as e:
         bridge = get_bridge()
+        je = bridge.extract_java_exception(e)
         if je is not None and bridge.is_instance_of(je, "org.apache.spark.SparkException"):
             converted = convert_exception(je.getCause())
             if not isinstance(converted, UnknownException):
