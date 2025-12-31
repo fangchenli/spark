@@ -203,16 +203,18 @@ class ResourceProfileBuilder:
     def __init__(self) -> None:
         from pyspark.sql import is_remote
 
-        _jvm = None
+        jvm = None
         if not is_remote():
             from pyspark.core.context import SparkContext
+            from pyspark.jvm_bridge import get_bridge
 
-            _jvm = SparkContext._jvm
+            if SparkContext._bridge is not None:
+                jvm = get_bridge().jvm
 
-        if _jvm is not None:
-            self._jvm = _jvm
+        if jvm is not None:
+            self._jvm = jvm
             self._java_resource_profile_builder = getattr(
-                _jvm, "org.apache.spark.resource.ResourceProfileBuilder"
+                jvm, "org.apache.spark.resource.ResourceProfileBuilder"
             )()
         else:
             self._jvm = None

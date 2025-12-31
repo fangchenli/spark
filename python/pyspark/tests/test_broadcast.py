@@ -21,9 +21,8 @@ import time
 import tempfile
 import unittest
 
-from py4j.protocol import Py4JJavaError
-
 from pyspark import SparkConf, SparkContext, Broadcast
+from pyspark.jvm_bridge import get_bridge
 from pyspark.java_gateway import launch_gateway
 from pyspark.serializers import ChunkedStream
 from pyspark.sql import SparkSession, Row
@@ -92,11 +91,13 @@ class BroadcastTest(unittest.TestCase):
         conf.setMaster("local[1,1]")
         conf.set("spark.memory.fraction", "0.0001")
         self.sc = SparkContext(conf=conf)
+        from pyspark.jvm_bridge import get_bridge
+
         b = self.sc.broadcast([100])
         try:
             res = self.sc.parallelize([0], 1).map(lambda x: 0 if x == 0 else b.value[0]).collect()
             self.assertEqual([0], res)
-            self.sc._jvm.java.lang.System.gc()
+            get_bridge().jvm.java.lang.System.gc()
             time.sleep(5)
             res = self.sc.parallelize([1], 1).map(lambda x: 0 if x == 0 else b.value[0]).collect()
             self.assertEqual([100], res)
@@ -120,6 +121,7 @@ class BroadcastTest(unittest.TestCase):
         conf.setMaster("local-cluster[2,1,1024]")
         self.sc = SparkContext(conf=conf)
         bs = self.sc.broadcast([1])
+        Py4JJavaError = get_bridge().get_java_exception_class()
         with self.assertRaisesRegex(pickle.PickleError, "Could.*not.*serialize.*broadcast"):
             self.sc.broadcast(self.sc)
         with self.assertRaisesRegex(Py4JJavaError, "RuntimeError.*Broadcast.*destroyed.*driver"):

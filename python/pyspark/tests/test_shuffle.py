@@ -19,9 +19,8 @@ import unittest
 from tempfile import TemporaryDirectory
 import os
 
-from py4j.protocol import Py4JJavaError
-
 from pyspark import shuffle, CPickleSerializer, SparkConf, SparkContext
+from pyspark.jvm_bridge import get_bridge
 from pyspark.shuffle import (
     Aggregator,
     ExternalMerger,
@@ -160,6 +159,7 @@ class MergerTests(unittest.TestCase):
             return x.extend(y) or x
 
         data = [(x % 2, x) for x in range(100)]
+        Py4JJavaError = get_bridge().get_java_exception_class()
 
         # wrong create combiner
         m = ExternalMerger(Aggregator(stopit, legit_merge_value, legit_merge_combiners), 20)

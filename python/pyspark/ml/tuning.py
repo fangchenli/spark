@@ -278,7 +278,7 @@ class _ValidatorParams(HasSeed):
         from pyspark.core.context import SparkContext
         from pyspark.jvm_bridge import get_bridge
 
-        assert SparkContext._jvm is not None
+        assert SparkContext._bridge is not None
         bridge = get_bridge()
 
         estimator = self.getEstimator()
@@ -314,7 +314,7 @@ class _ValidatorSharedReadWrite:
         stagePairs = list(map(lambda stage: (stage, cast(JavaParams, stage)._to_java()), pyStages))
         sc = SparkContext._active_spark_context
 
-        assert sc is not None and SparkContext._jvm is not None
+        assert sc is not None and SparkContext._bridge is not None
 
         bridge = get_bridge()
         javaParamMaps = bridge.new_array("org.apache.spark.ml.param.ParamMap", len(pyParamMaps))
@@ -348,7 +348,7 @@ class _ValidatorSharedReadWrite:
         stagePairs = list(map(lambda stage: (stage, cast(JavaParams, stage)._to_java()), pyStages))
         sc = SparkContext._active_spark_context
 
-        assert sc is not None and sc._jvm is not None
+        assert sc is not None and sc._bridge is not None
 
         pyParamMaps = []
         for javaParamMap in javaParamMaps:

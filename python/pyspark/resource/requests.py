@@ -174,8 +174,12 @@ class ExecutorResourceRequests:
         jvm = None
         if not is_remote():
             from pyspark.core.context import SparkContext
+            from pyspark.jvm_bridge import get_bridge
 
-            jvm = _jvm or SparkContext._jvm
+            if _jvm is not None:
+                jvm = _jvm
+            elif SparkContext._bridge is not None:
+                jvm = get_bridge().jvm
 
         if jvm is not None:
             self._java_executor_resource_requests = getattr(
@@ -475,8 +479,12 @@ class TaskResourceRequests:
         jvm = None
         if not is_remote():
             from pyspark.core.context import SparkContext
+            from pyspark.jvm_bridge import get_bridge
 
-            jvm = _jvm or SparkContext._jvm
+            if _jvm is not None:
+                jvm = _jvm
+            elif SparkContext._bridge is not None:
+                jvm = get_bridge().jvm
 
         if jvm is not None:
             self._java_task_resource_requests: Optional["JavaObjectRef"] = getattr(

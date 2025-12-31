@@ -2534,8 +2534,8 @@ class DataFrameWriterV2:
 def _test() -> None:
     import doctest
     import os
-    import py4j
     from pyspark.core.context import SparkContext
+    from pyspark.jvm_bridge import get_bridge
     from pyspark.sql import SparkSession
     import pyspark.sql.readwriter
 
@@ -2545,7 +2545,7 @@ def _test() -> None:
     sc = SparkContext("local[4]", "PythonTest")
     try:
         spark = SparkSession._getActiveSessionOrCreate()
-    except py4j.protocol.Py4JError:
+    except get_bridge().get_protocol_error_class():
         spark = SparkSession(sc)
 
     globs["spark"] = spark

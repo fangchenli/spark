@@ -21,8 +21,8 @@ from shutil import rmtree
 import unittest
 
 from numpy import array, array_equal
-from py4j.protocol import Py4JJavaError
 
+from pyspark.jvm_bridge import get_bridge
 from pyspark.mllib.fpm import FPGrowth
 from pyspark.mllib.recommendation import Rating
 from pyspark.mllib.regression import LabeledPoint
@@ -311,21 +311,27 @@ class ListTests(MLlibTestCase):
 
 class ALSTests(MLlibTestCase):
     def test_als_ratings_serialize(self):
+        from pyspark.jvm_bridge import get_bridge
+
+        jvm = get_bridge().jvm
         ser = CPickleSerializer()
         r = Rating(7, 1123, 3.14)
-        jr = self.sc._jvm.org.apache.spark.mllib.api.python.SerDe.loads(bytearray(ser.dumps(r)))
-        nr = ser.loads(bytes(self.sc._jvm.org.apache.spark.mllib.api.python.SerDe.dumps(jr)))
+        jr = jvm.org.apache.spark.mllib.api.python.SerDe.loads(bytearray(ser.dumps(r)))
+        nr = ser.loads(bytes(jvm.org.apache.spark.mllib.api.python.SerDe.dumps(jr)))
         self.assertEqual(r.user, nr.user)
         self.assertEqual(r.product, nr.product)
         self.assertAlmostEqual(r.rating, nr.rating, 2)
 
     def test_als_ratings_id_long_error(self):
+        bridge = get_bridge()
+        jvm = bridge.jvm
+        Py4JJavaError = bridge.get_java_exception_class()
         ser = CPickleSerializer()
         r = Rating(1205640308657491975, 50233468418, 1.0)
         # rating user id exceeds max int value, should fail when pickled
         self.assertRaises(
             Py4JJavaError,
-            self.sc._jvm.org.apache.spark.mllib.api.python.SerDe.loads,
+            jvm.org.apache.spark.mllib.api.python.SerDe.loads,
             bytearray(ser.dumps(r)),
         )
 

@@ -117,7 +117,6 @@ class SQLContext:
 
         self._sc = sparkContext
         self._jsc = self._sc._jsc
-        self._jvm = self._sc._jvm
         if sparkSession is None:
             sparkSession = SparkSession._getActiveSessionOrCreate()
         if jsqlContext is None:
@@ -169,7 +168,7 @@ class SQLContext:
             cls._instantiatedContext is None
             or SQLContext._instantiatedContext._sc._jsc is None  # type: ignore[union-attr]
         ):
-            assert sc._jvm is not None
+            assert sc._bridge is not None
             # There can be only one running Spark context. That will automatically
             # be used in the Spark session internally.
             session = SparkSession._getActiveSessionOrCreate(**static_conf)

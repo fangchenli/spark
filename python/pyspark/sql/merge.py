@@ -129,9 +129,10 @@ class MergeIntoWriter:
             Specifies an action to update matched rows in the DataFrame with the provided column
             assignments.
             """
-            jvm = self.writer._spark._jvm
+            from pyspark.jvm_bridge import get_bridge
             from pyspark.sql.classic.column import _to_java_column
 
+            jvm = get_bridge().jvm
             jmap = to_scala_map(jvm, {k: _to_java_column(v) for k, v in assignments.items()})
             self.writer._jwriter = self.when_matched.update(jmap)
             return self.writer
@@ -169,9 +170,10 @@ class MergeIntoWriter:
             Specifies an action to insert non-matched rows into the DataFrame with the provided
             column assignments.
             """
-            jvm = self.writer._spark._jvm
+            from pyspark.jvm_bridge import get_bridge
             from pyspark.sql.classic.column import _to_java_column
 
+            jvm = get_bridge().jvm
             jmap = to_scala_map(jvm, {k: _to_java_column(v) for k, v in assignments.items()})
             self.writer._jwriter = self.when_not_matched.insert(jmap)
             return self.writer
@@ -206,9 +208,10 @@ class MergeIntoWriter:
             Specifies an action to update non-matched rows in the target DataFrame with the provided
             column assignments when not matched by the source.
             """
-            jvm = self.writer._spark._jvm
+            from pyspark.jvm_bridge import get_bridge
             from pyspark.sql.classic.column import _to_java_column
 
+            jvm = get_bridge().jvm
             jmap = to_scala_map(jvm, {k: _to_java_column(v) for k, v in assignments.items()})
             self.writer._jwriter = self.when_not_matched_by_source.update(jmap)
             return self.writer
@@ -224,8 +227,8 @@ class MergeIntoWriter:
 def _test() -> None:
     import doctest
     import os
-    import py4j
     from pyspark.core.context import SparkContext
+    from pyspark.jvm_bridge import get_bridge
     from pyspark.sql import SparkSession
     import pyspark.sql.merge
 
@@ -235,7 +238,7 @@ def _test() -> None:
     sc = SparkContext("local[4]", "PythonTest")
     try:
         spark = SparkSession._getActiveSessionOrCreate()
-    except py4j.protocol.Py4JError:
+    except get_bridge().get_protocol_error_class():
         spark = SparkSession(sc)
 
     globs["spark"] = spark

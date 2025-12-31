@@ -406,15 +406,17 @@ class UserDefinedTableFunction:
                 },
             )
 
-        assert sc._jvm is not None
+        from pyspark.jvm_bridge import get_bridge
+
+        jvm = get_bridge().jvm
         if self.returnType is None:
             judtf = getattr(
-                sc._jvm, "org.apache.spark.sql.execution.python.UserDefinedPythonTableFunction"
+                jvm, "org.apache.spark.sql.execution.python.UserDefinedPythonTableFunction"
             )(self._name, wrapped_func, self.evalType, self.deterministic)
         else:
             jdt = spark._jsparkSession.parseDataType(self.returnType.json())
             judtf = getattr(
-                sc._jvm, "org.apache.spark.sql.execution.python.UserDefinedPythonTableFunction"
+                jvm, "org.apache.spark.sql.execution.python.UserDefinedPythonTableFunction"
             )(self._name, wrapped_func, jdt, self.evalType, self.deterministic)
         return judtf
 
@@ -427,7 +429,6 @@ class UserDefinedTableFunction:
         spark = SparkSession._getActiveSessionOrCreate()
         sc = spark.sparkContext
 
-        assert sc._jvm is not None
         # Process positional arguments
         jargs = []
         for arg in args:

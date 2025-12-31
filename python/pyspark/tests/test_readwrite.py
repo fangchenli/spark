@@ -26,10 +26,13 @@ from pyspark.testing.utils import ReusedPySparkTestCase
 class InputFormatTests(ReusedPySparkTestCase):
     @classmethod
     def setUpClass(cls):
+        from pyspark.jvm_bridge import get_bridge
+
         ReusedPySparkTestCase.setUpClass()
         cls.tempdir = tempfile.NamedTemporaryFile(delete=False)
         os.unlink(cls.tempdir.name)
-        cls.sc._jvm.WriteInputFormatTestDataGenerator.generateData(cls.tempdir.name, cls.sc._jsc)
+        jvm = get_bridge().jvm
+        jvm.WriteInputFormatTestDataGenerator.generateData(cls.tempdir.name, cls.sc._jsc)
 
     @classmethod
     def tearDownClass(cls):

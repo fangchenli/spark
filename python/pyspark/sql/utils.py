@@ -233,9 +233,12 @@ def is_timestamp_ntz_preferred() -> bool:
             return session.conf.get("spark.sql.timestampType", None) == "TIMESTAMP_NTZ"
     else:
         from pyspark import SparkContext
+        from pyspark.jvm_bridge import get_bridge
 
-        jvm = SparkContext._jvm
-        return jvm is not None and jvm.PythonSQLUtils.isTimestampNTZPreferred()
+        if SparkContext._bridge is None:
+            return False
+        jvm = get_bridge().jvm
+        return jvm.PythonSQLUtils.isTimestampNTZPreferred()
 
 
 def is_remote() -> bool:

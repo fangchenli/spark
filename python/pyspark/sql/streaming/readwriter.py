@@ -1305,8 +1305,10 @@ class DataStreamWriter:
                 messageParameters={},
             )
 
+        from pyspark.jvm_bridge import get_bridge
+
         jTrigger = None
-        assert self._spark._sc._jvm is not None
+        jvm = get_bridge().jvm
         if processingTime is not None:
             if type(processingTime) != str or len(processingTime.strip()) == 0:
                 raise PySparkValueError(
@@ -1318,7 +1320,7 @@ class DataStreamWriter:
                 )
             interval = processingTime.strip()
             jTrigger = getattr(
-                self._spark._sc._jvm, "org.apache.spark.sql.streaming.Trigger"
+                jvm, "org.apache.spark.sql.streaming.Trigger"
             ).ProcessingTime(interval)
 
         elif once is not None:
@@ -1329,7 +1331,7 @@ class DataStreamWriter:
                 )
 
             jTrigger = getattr(
-                self._spark._sc._jvm, "org.apache.spark.sql.streaming.Trigger"
+                jvm, "org.apache.spark.sql.streaming.Trigger"
             ).Once()
 
         elif continuous is not None:
@@ -1340,7 +1342,7 @@ class DataStreamWriter:
                 )
             interval = continuous.strip()
             jTrigger = getattr(
-                self._spark._sc._jvm, "org.apache.spark.sql.streaming.Trigger"
+                jvm, "org.apache.spark.sql.streaming.Trigger"
             ).Continuous(interval)
         else:
             if availableNow is not True:
@@ -1349,7 +1351,7 @@ class DataStreamWriter:
                     messageParameters={"arg_name": "availableNow", "arg_value": str(availableNow)},
                 )
             jTrigger = getattr(
-                self._spark._sc._jvm, "org.apache.spark.sql.streaming.Trigger"
+                jvm, "org.apache.spark.sql.streaming.Trigger"
             ).AvailableNow()
 
         self._jwrite = self._jwrite.trigger(jTrigger)
@@ -1557,12 +1559,14 @@ class DataStreamWriter:
         from pyspark.core.rdd import _wrap_function
         from pyspark.serializers import CPickleSerializer, AutoBatchedSerializer
 
+        from pyspark.jvm_bridge import get_bridge
+
         func = self._construct_foreach_function(f)
         serializer = AutoBatchedSerializer(CPickleSerializer())
         wrapped_func = _wrap_function(self._spark._sc, func, serializer, serializer)
-        assert self._spark._sc._jvm is not None
+        jvm = get_bridge().jvm
         jForeachWriter = getattr(
-            self._spark._sc._jvm,
+            jvm,
             "org.apache.spark.sql.execution.python.streaming.PythonForeachWriter",
         )(wrapped_func, self._df._jdf.schema())
         self._jwrite.foreach(jForeachWriter)

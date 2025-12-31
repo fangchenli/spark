@@ -485,18 +485,17 @@ def try_remote_evaluate(f: FuncT) -> FuncT:
     return cast(FuncT, wrapped)
 
 
-def _jvm() -> "JavaGateway":
+def _jvm() -> Any:
     """
     Returns the JVM view associated with SparkContext. Must be called
     after SparkContext is initialized.
     """
-    from pyspark.core.context import SparkContext
+    from pyspark.jvm_bridge import get_bridge
 
-    jvm = SparkContext._jvm
-    if jvm:
-        return jvm
-    else:
-        raise AttributeError("Cannot load _jvm from SparkContext. Is SparkContext initialized?")
+    try:
+        return get_bridge().jvm
+    except RuntimeError:
+        raise AttributeError("Cannot load JVM. Is SparkContext initialized?")
 
 
 class Identifiable:

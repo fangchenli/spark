@@ -5109,8 +5109,9 @@ class RDD(Generic[T_co]):
 
             bridge = get_bridge()
             builder = bridge.new("org.apache.spark.resource.ResourceProfileBuilder")
-            ereqs = ExecutorResourceRequests(self.ctx._jvm, profile._executor_resource_requests)
-            treqs = TaskResourceRequests(self.ctx._jvm, profile._task_resource_requests)
+            jvm = bridge.jvm
+            ereqs = ExecutorResourceRequests(jvm, profile._executor_resource_requests)
+            treqs = TaskResourceRequests(jvm, profile._task_resource_requests)
             bridge.call(builder, "require", ereqs._java_executor_resource_requests)
             bridge.call(builder, "require", treqs._java_task_resource_requests)
             jrp = bridge.call(builder, "build")

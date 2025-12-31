@@ -89,13 +89,6 @@ if TYPE_CHECKING:
 __all__ = ["SparkContext"]
 
 
-class _ClassProperty(property):
-    """Class property descriptor for SparkContext._jvm backward compatibility."""
-
-    def __get__(self, obj: Any, objtype: Optional[type] = None) -> Any:
-        return super().__get__(objtype)
-
-
 # These are special default configs for PySpark, they will overwrite
 # the default ones for Spark if they are not configured by user.
 DEFAULT_CONFIGS: Dict[str, Any] = {
@@ -184,17 +177,6 @@ class SparkContext:
     profiler_collector: ProfilerCollector
 
     PACKAGE_EXTENSIONS: Iterable[str] = (".zip", ".egg", ".jar")
-
-    @_ClassProperty
-    def _jvm(cls) -> Optional[Any]:
-        """Get the JVM view for backward compatibility.
-
-        .. deprecated::
-            Use get_bridge().jvm or SparkContext._bridge.jvm instead.
-        """
-        if cls._bridge is not None:
-            return cls._bridge.jvm
-        return None
 
     def __init__(
         self,

@@ -74,7 +74,6 @@ class StreamingContext:
             FutureWarning,
         )
         self._sc = sparkContext
-        self._jvm = self._sc._jvm
         self._jssc = jssc or self._initialize_context(self._sc, batchDuration)
 
     def _initialize_context(self, sc: SparkContext, duration: Optional[int]) -> JavaObjectRef:

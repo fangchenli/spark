@@ -546,8 +546,11 @@ class JavaLoader(Loader[T]):
         """
         Load a Java model from the given path.
         """
+        from pyspark.jvm_bridge import get_bridge
+
         java_class = cls._java_loader_class()
-        java_obj: "JavaObjectRef" = reduce(getattr, java_class.split("."), sc._jvm)
+        jvm = get_bridge().jvm
+        java_obj: "JavaObjectRef" = reduce(getattr, java_class.split("."), jvm)
         return java_obj.load(sc._jsc.sc(), path)
 
     @classmethod

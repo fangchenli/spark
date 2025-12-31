@@ -21,9 +21,8 @@ import tempfile
 import unittest
 from importlib import reload
 
-import py4j
-
 from pyspark import SparkContext, SQLContext
+from pyspark.jvm_bridge import get_bridge
 from pyspark.sql import Row, SparkSession
 from pyspark.sql.types import StructType, StringType, StructField
 from pyspark.testing.sqlutils import ReusedSQLTestCase
@@ -32,13 +31,16 @@ from pyspark.testing.sqlutils import ReusedSQLTestCase
 class HiveContextSQLTests(ReusedSQLTestCase):
     @classmethod
     def setUpClass(cls):
+        bridge = get_bridge()
+        Py4JError = bridge.get_protocol_error_class()
+
         ReusedSQLTestCase.setUpClass()
         cls.tempdir = tempfile.NamedTemporaryFile(delete=False)
         cls.hive_available = True
         cls.spark = None
         try:
-            cls.sc._jvm.org.apache.hadoop.hive.conf.HiveConf()
-        except py4j.protocol.Py4JError:
+            bridge.jvm.org.apache.hadoop.hive.conf.HiveConf()
+        except Py4JError:
             cls.tearDownClass()
             cls.hive_available = False
         except TypeError:

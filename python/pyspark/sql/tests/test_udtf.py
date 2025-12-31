@@ -1093,8 +1093,9 @@ class BaseUDTFTestsMixin:
                 self._check_result_or_exception(TestUDTF, ret_type, expected)
 
     def test_struct_output_type_casting_row(self):
-        from py4j.protocol import Py4JJavaError
+        from pyspark.jvm_bridge import get_bridge
 
+        Py4JJavaError = get_bridge().get_java_exception_class()
         self.check_struct_output_type_casting_row(Py4JJavaError)
 
     def check_struct_output_type_casting_row(self, error_type):

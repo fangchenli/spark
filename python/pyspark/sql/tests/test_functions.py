@@ -51,7 +51,9 @@ class FunctionsTestsMixin:
         # * If it's not related to an added/removed function then likely the exclusion list
         #     jvm_excluded_fn needs to be updated.
 
-        jvm_fn_set = {name for (name, value) in getmembers(self.sc._jvm.functions)}
+        from pyspark.jvm_bridge import get_bridge
+
+        jvm_fn_set = {name for (name, value) in getmembers(get_bridge().jvm.functions)}
         py_fn_set = {name for (name, value) in getmembers(F, isfunction) if name[0] != "_"}
 
         # Functions on the JVM side we do not expect to be available in python because they are

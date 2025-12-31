@@ -277,9 +277,13 @@ class StreamingListenerTests(StreamingListenerTestsMixin, ReusedSQLTestCase):
             "Otherwise, fix the number on the assert here."
         )
 
+        from pyspark.jvm_bridge import get_bridge
+
+        jvm = get_bridge().jvm
+
         def get_number_of_public_methods(clz):
             return len(
-                self.spark.sparkContext._jvm.org.apache.spark.util.Utils.classForName(
+                jvm.org.apache.spark.util.Utils.classForName(
                     clz, True, False
                 ).getMethods()
             )

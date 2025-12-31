@@ -89,8 +89,10 @@ class StreamingTestsForeachBatchMixin:
 
     def test_streaming_foreach_batch_graceful_stop(self):
         # SPARK-39218: Make foreachBatch streaming query stop gracefully
+        from pyspark.jvm_bridge import get_bridge
+
         def func(batch_df, _):
-            batch_df.sparkSession._jvm.java.lang.Thread.sleep(10000)
+            get_bridge().jvm.java.lang.Thread.sleep(10000)
 
         q = self.spark.readStream.format("rate").load().writeStream.foreachBatch(func).start()
         time.sleep(3)  # 'rowsPerSecond' defaults to 1. Waits 3 secs out for the input.

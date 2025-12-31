@@ -208,7 +208,7 @@ class Pipeline(Estimator["PipelineModel"], MLReadable["Pipeline"], MLWritable):
         from pyspark.core.context import SparkContext
         from pyspark.jvm_bridge import get_bridge
 
-        assert SparkContext._jvm is not None
+        assert SparkContext._bridge is not None
         bridge = get_bridge()
 
         java_stages = bridge.new_array(
@@ -360,7 +360,7 @@ class PipelineModel(Model, MLReadable["PipelineModel"], MLWritable):
         from pyspark.core.context import SparkContext
         from pyspark.jvm_bridge import get_bridge
 
-        assert SparkContext._jvm is not None
+        assert SparkContext._bridge is not None
         bridge = get_bridge()
 
         java_stages = bridge.new_array("org.apache.spark.ml.Transformer", len(self.stages))

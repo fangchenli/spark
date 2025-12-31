@@ -532,9 +532,12 @@ class CheckpointTests(unittest.TestCase):
     @staticmethod
     def tearDownClass():
         # Clean up in the JVM just in case there has been some issues in Python API
-        if SparkContext._jvm is not None:
+        if SparkContext._bridge is not None:
+            from pyspark.jvm_bridge import get_bridge
+
+            jvm = get_bridge().jvm
             jStreamingContextOption = (
-                SparkContext._jvm.org.apache.spark.streaming.StreamingContext.getActive()
+                jvm.org.apache.spark.streaming.StreamingContext.getActive()
             )
             if jStreamingContextOption.nonEmpty():
                 jStreamingContextOption.get().stop()

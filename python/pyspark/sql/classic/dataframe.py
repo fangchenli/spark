@@ -939,7 +939,9 @@ class DataFrame(ParentDataFrame, PandasMapOpsMixin, PandasConversionMixin):
 
     def _jmap(self, jm: Dict) -> "JavaObjectRef":
         """Return a JVM Scala Map from a dict"""
-        return to_scala_map(self.sparkSession._sc._jvm, jm)
+        from pyspark.jvm_bridge import get_bridge
+
+        return to_scala_map(get_bridge().jvm, jm)
 
     def _jcols(self, *cols: "ColumnOrName") -> "JavaObjectRef":
         """Return a JVM Seq of Columns from a list of Column or column names

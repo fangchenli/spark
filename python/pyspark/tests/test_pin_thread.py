@@ -46,10 +46,13 @@ class PinThreadTests(unittest.TestCase):
         property_name = "test_property_%s" % PinThreadTests.__name__
         jvm_thread_ids = []
 
+        from pyspark.jvm_bridge import get_bridge
+
+        jvm = get_bridge().jvm
         for i in range(10):
 
             def test_local_property():
-                jvm_thread_id = self.sc._jvm.java.lang.Thread.currentThread().getId()
+                jvm_thread_id = jvm.java.lang.Thread.currentThread().getId()
                 jvm_thread_ids.append(jvm_thread_id)
 
                 # If a property is set in this thread, later it should get the same property
@@ -64,7 +67,7 @@ class PinThreadTests(unittest.TestCase):
 
                     # Each command might create a thread in multi-threading mode in Py4J.
                     # This assert makes sure that the created thread is being reused.
-                    assert jvm_thread_id == self.sc._jvm.java.lang.Thread.currentThread().getId()
+                    assert jvm_thread_id == jvm.java.lang.Thread.currentThread().getId()
                 except Exception as e:
                     exceptions.append(e)
 

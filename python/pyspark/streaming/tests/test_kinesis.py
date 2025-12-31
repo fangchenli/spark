@@ -57,9 +57,11 @@ class KinesisStreamTests(PySparkStreamingTestCase):
 
     def test_kinesis_stream(self):
         import random
+        from pyspark.jvm_bridge import get_bridge
 
+        jvm = get_bridge().jvm
         kinesisAppName = "KinesisStreamTests-%d" % abs(random.randint(0, 10000000))
-        kinesisTestUtils = self.ssc._jvm.org.apache.spark.streaming.kinesis.KinesisTestUtils(2)
+        kinesisTestUtils = jvm.org.apache.spark.streaming.kinesis.KinesisTestUtils(2)
         try:
             kinesisTestUtils.createStream()
             aWSCredentials = kinesisTestUtils.getAWSCredentials()

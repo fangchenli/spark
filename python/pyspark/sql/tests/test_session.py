@@ -59,23 +59,29 @@ class SparkSessionTests2(PySparkTestCase):
     # This test is separate because it's closely related with session's start and stop.
     # See SPARK-23228.
     def test_set_jvm_default_session(self):
+        from pyspark.jvm_bridge import get_bridge
+
+        jvm = get_bridge().jvm
         spark = SparkSession.builder.getOrCreate()
         try:
-            self.assertTrue(spark._jvm.SparkSession.getDefaultSession().isDefined())
+            self.assertTrue(jvm.SparkSession.getDefaultSession().isDefined())
         finally:
             spark.stop()
-            self.assertTrue(spark._jvm.SparkSession.getDefaultSession().isEmpty())
+            self.assertTrue(jvm.SparkSession.getDefaultSession().isEmpty())
 
     def test_jvm_default_session_already_set(self):
+        from pyspark.jvm_bridge import get_bridge
+
+        jvm = get_bridge().jvm
         # Here, we assume there is the default session already set in JVM.
-        jsession = self.sc._jvm.SparkSession(self.sc._jsc.sc())
-        self.sc._jvm.SparkSession.setDefaultSession(jsession)
+        jsession = jvm.SparkSession(self.sc._jsc.sc())
+        jvm.SparkSession.setDefaultSession(jsession)
 
         spark = SparkSession.builder.getOrCreate()
         try:
-            self.assertTrue(spark._jvm.SparkSession.getDefaultSession().isDefined())
+            self.assertTrue(jvm.SparkSession.getDefaultSession().isDefined())
             # The session should be the same with the exiting one.
-            self.assertTrue(jsession.equals(spark._jvm.SparkSession.getDefaultSession().get()))
+            self.assertTrue(jsession.equals(jvm.SparkSession.getDefaultSession().get()))
         finally:
             spark.stop()
 
@@ -152,9 +158,12 @@ class SparkSessionTests3(unittest.TestCase, PySparkErrorTestUtils):
             spark.stop()
 
     def test_default_and_active_session(self):
+        from pyspark.jvm_bridge import get_bridge
+
+        jvm = get_bridge().jvm
         spark = SparkSession.builder.master("local").getOrCreate()
-        activeSession = spark._jvm.SparkSession.getActiveSession()
-        defaultSession = spark._jvm.SparkSession.getDefaultSession()
+        activeSession = jvm.SparkSession.getActiveSession()
+        defaultSession = jvm.SparkSession.getDefaultSession()
         try:
             self.assertEqual(activeSession, defaultSession)
         finally:
@@ -193,6 +202,8 @@ class SparkSessionTests3(unittest.TestCase, PySparkErrorTestUtils):
             session.range(5).collect()
 
     def test_active_session_with_None_and_not_None_context(self):
+        from pyspark.jvm_bridge import get_bridge
+
         sc = None
         session = None
         try:
@@ -202,10 +213,11 @@ class SparkSessionTests3(unittest.TestCase, PySparkErrorTestUtils):
             self.assertEqual(activeSession, None)
             sparkConf = SparkConf()
             sc = SparkContext.getOrCreate(sparkConf)
-            activeSession = sc._jvm.SparkSession.getActiveSession()
+            jvm = get_bridge().jvm
+            activeSession = jvm.SparkSession.getActiveSession()
             self.assertFalse(activeSession.isDefined())
             session = SparkSession(sc)
-            activeSession = sc._jvm.SparkSession.getActiveSession()
+            activeSession = jvm.SparkSession.getActiveSession()
             self.assertTrue(activeSession.isDefined())
             activeSession2 = SparkSession.getActiveSession()
             self.assertNotEqual(activeSession2, None)
@@ -582,12 +594,15 @@ class SparkExtensionsTest(unittest.TestCase):
         cls.spark.stop()
 
     def test_use_custom_class_for_extensions(self):
+        from pyspark.jvm_bridge import get_bridge
+
+        jvm = get_bridge().jvm
         self.assertTrue(
             self.spark._jsparkSession.sessionState()
             .planner()
             .strategies()
             .contains(
-                self.spark._jvm.org.apache.spark.sql.MySparkStrategy(self.spark._jsparkSession)
+                jvm.org.apache.spark.sql.MySparkStrategy(self.spark._jsparkSession)
             ),
             "MySparkStrategy not found in active planner strategies",
         )
@@ -595,7 +610,7 @@ class SparkExtensionsTest(unittest.TestCase):
             self.spark._jsparkSession.sessionState()
             .analyzer()
             .extendedResolutionRules()
-            .contains(self.spark._jvm.org.apache.spark.sql.MyRule(self.spark._jsparkSession)),
+            .contains(jvm.org.apache.spark.sql.MyRule(self.spark._jsparkSession)),
             "MyRule not found in extended resolution rules",
         )
 

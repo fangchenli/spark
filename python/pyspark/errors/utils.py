@@ -321,12 +321,14 @@ def _with_origin(func: FuncT) -> FuncT:
                 finally:
                     set_current_origin(None, None)
             else:
+                from pyspark.jvm_bridge import get_bridge
+
                 spark = SparkSession.getActiveSession()
                 if spark is None:
                     return func(*args, **kwargs)
-                assert spark._jvm is not None
+                jvm = get_bridge().jvm
                 jvm_pyspark_origin = getattr(
-                    spark._jvm, "org.apache.spark.sql.catalyst.trees.PySparkCurrentOrigin"
+                    jvm, "org.apache.spark.sql.catalyst.trees.PySparkCurrentOrigin"
                 )
                 depth = int(
                     spark.conf.get(  # type: ignore[arg-type]

@@ -19,9 +19,8 @@ import time
 import unittest
 from unittest.mock import patch
 
-from py4j.protocol import Py4JJavaError
-
 from pyspark import keyword_only
+from pyspark.jvm_bridge import get_bridge
 from pyspark.util import _parse_memory
 from pyspark.loose_version import LooseVersion
 from pyspark.testing.utils import PySparkTestCase, eventually, timeout
@@ -68,9 +67,11 @@ class KeywordOnlyTests(unittest.TestCase):
 
 class UtilTests(PySparkTestCase):
     def test_py4j_str(self):
+        Py4JJavaError = get_bridge().get_java_exception_class()
+
         with self.assertRaises(Py4JJavaError) as context:
             # This attempts java.lang.String(null) which throws an NPE.
-            self.sc._jvm.java.lang.String(None)
+            get_bridge().jvm.java.lang.String(None)
 
         self.assertTrue("NullPointerException" in str(context.exception))
 

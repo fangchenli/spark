@@ -556,7 +556,9 @@ class SparkSession(SparkConversionMixin):
                     # by all sessions.
                     session = SparkSession(sc, options=self._options)
                 else:
-                    module = SparkSession._get_j_spark_session_module(session._jvm)
+                    from pyspark.jvm_bridge import get_bridge
+
+                    module = SparkSession._get_j_spark_session_module(get_bridge().jvm)
                     module.applyModifiableSettings(session._jsparkSession, self._options)
                 return session
 
@@ -619,14 +621,16 @@ class SparkSession(SparkConversionMixin):
         jsparkSession: Optional["JavaObjectRef"] = None,
         options: Dict[str, Any] = {},
     ):
+        from pyspark.jvm_bridge import get_bridge
+
         self._sc = sparkContext
         self._jsc = self._sc._jsc
-        self._jvm = self._sc._jvm
 
-        assert self._jvm is not None
+        bridge = get_bridge()
+        jvm = bridge.jvm
 
-        jSparkSessionClass = SparkSession._get_j_spark_session_class(self._jvm)
-        jSparkSessionModule = SparkSession._get_j_spark_session_module(self._jvm)
+        jSparkSessionClass = SparkSession._get_j_spark_session_class(jvm)
+        jSparkSessionModule = SparkSession._get_j_spark_session_module(jvm)
 
         if jsparkSession is None:
             if (
@@ -648,7 +652,6 @@ class SparkSession(SparkConversionMixin):
         if SparkSession._should_update_active_session():
             SparkSession._instantiatedSession = self
             SparkSession._activeSession = self
-            assert self._jvm is not None
             jSparkSessionClass.setDefaultSession(self._jsparkSession)
             jSparkSessionClass.setActiveSession(self._jsparkSession)
 
@@ -735,13 +738,14 @@ class SparkSession(SparkConversionMixin):
         +---+
         """
         from pyspark import SparkContext
+        from pyspark.jvm_bridge import get_bridge
 
         sc = SparkContext._active_spark_context
         if sc is None:
             return None
         else:
-            assert sc._jvm is not None
-            jSparkSessionClass = SparkSession._get_j_spark_session_class(sc._jvm)
+            jvm = get_bridge().jvm
+            jSparkSessionClass = SparkSession._get_j_spark_session_class(jvm)
             if jSparkSessionClass.getActiveSession().isDefined():
                 if SparkSession._should_update_active_session():
                     SparkSession(sc, jSparkSessionClass.getActiveSession().get())
@@ -1259,20 +1263,21 @@ class SparkSession(SparkConversionMixin):
         shell.py to make error handling simpler without needing to declare local variables in
         that script, which would expose those to users.
         """
-        import py4j
         from pyspark.core.context import SparkContext
+        from pyspark.jvm_bridge import get_bridge
 
         try:
             # Try to access HiveConf, it will raise exception if Hive is not added
-            from pyspark.jvm_bridge import get_bridge
+            bridge = get_bridge()
+            Py4JError = bridge.get_protocol_error_class()
 
             conf = SparkConf()
             if conf.get("spark.sql.catalogImplementation", "hive").lower() == "hive":
-                get_bridge().new("org.apache.hadoop.hive.conf.HiveConf")
+                bridge.new("org.apache.hadoop.hive.conf.HiveConf")
                 return SparkSession.builder.enableHiveSupport().getOrCreate()
             else:
                 return SparkSession._getActiveSessionOrCreate()
-        except (py4j.protocol.Py4JError, TypeError):
+        except (Py4JError, TypeError):
             if conf.get("spark.sql.catalogImplementation", "").lower() == "hive":
                 warnings.warn(
                     "Fall back to non-hive support because failing to access HiveConf, "
@@ -1555,9 +1560,12 @@ class SparkSession(SparkConversionMixin):
         |  1|  2|
         +---+---+
         """
+        from pyspark.jvm_bridge import get_bridge
+
         SparkSession._activeSession = self
-        assert self._jvm is not None
-        SparkSession._get_j_spark_session_class(self._jvm).setActiveSession(self._jsparkSession)
+        SparkSession._get_j_spark_session_class(get_bridge().jvm).setActiveSession(
+            self._jsparkSession
+        )
         if isinstance(data, DataFrame):
             raise PySparkTypeError(
                 errorClass="INVALID_TYPE",
@@ -2063,12 +2071,12 @@ class SparkSession(SparkConversionMixin):
         --------
         >>> spark.stop()  # doctest: +SKIP
         """
+        from pyspark.jvm_bridge import get_bridge
         from pyspark.sql.context import SQLContext
 
         self._sc.stop()
         # We should clean the default session up. See SPARK-23228.
-        assert self._jvm is not None
-        jSparkSessionClass = SparkSession._get_j_spark_session_class(self._jvm)
+        jSparkSessionClass = SparkSession._get_j_spark_session_class(get_bridge().jvm)
         jSparkSessionClass.clearDefaultSession()
         jSparkSessionClass.clearActiveSession()
         SparkSession._instantiatedSession = None

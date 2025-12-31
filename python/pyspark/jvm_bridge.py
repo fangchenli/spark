@@ -32,7 +32,7 @@ Usage:
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Iterator, List, Protocol, Tuple, TYPE_CHECKING, Union, runtime_checkable
+from typing import Any, Callable, Dict, Iterator, List, Protocol, Tuple, TYPE_CHECKING, Union, runtime_checkable
 
 if TYPE_CHECKING:
     from py4j.java_gateway import JavaGateway
@@ -561,6 +561,34 @@ class BridgeAdapter(ABC):
         """
         ...
 
+    @abstractmethod
+    def install_exception_handler(self, handler: Callable[[Callable[..., Any]], Callable[..., Any]]) -> None:
+        """Install an exception handler wrapper for JVM calls.
+
+        This allows intercepting and transforming exceptions from JVM calls.
+        The handler is a decorator that wraps the bridge's return value parser.
+
+        Args:
+            handler: A function that takes the original return value parser
+                    and returns a wrapped version that can catch and transform
+                    exceptions.
+
+        Example:
+            def capture_sql_exception(original_func):
+                def wrapper(*args, **kwargs):
+                    try:
+                        return original_func(*args, **kwargs)
+                    except bridge.get_java_exception_class() as e:
+                        # Transform the exception
+                        raise ConvertedException(e) from None
+                return wrapper
+
+            bridge.install_exception_handler(capture_sql_exception)
+
+        This is idempotent - calling multiple times has no additional effect.
+        """
+        ...
+
 
 # =============================================================================
 # Py4J Adapter
@@ -737,6 +765,26 @@ class Py4JAdapter(BridgeAdapter):
         from py4j.clientserver import ClientServer
 
         return isinstance(self._gateway, ClientServer)
+
+    def install_exception_handler(
+        self, handler: Callable[[Callable[..., Any]], Callable[..., Any]]
+    ) -> None:
+        """Install an exception handler wrapper for JVM calls.
+
+        This patches py4j.java_gateway.get_return_value to intercept exceptions.
+        The handler wraps the original function to catch and transform exceptions.
+
+        This is idempotent - the original get_return_value is only wrapped once.
+        """
+        import py4j.java_gateway
+        import py4j.protocol
+
+        # Get the original unpatched function from py4j.protocol
+        original = py4j.protocol.get_return_value
+        # Wrap it with the handler
+        patched = handler(original)
+        # Patch the one used in py4j.java_gateway (where Java API calls go through)
+        py4j.java_gateway.get_return_value = patched
 
 
 # =============================================================================

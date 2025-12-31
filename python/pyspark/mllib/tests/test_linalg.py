@@ -43,14 +43,17 @@ from pyspark.testing.utils import have_scipy
 
 class VectorTests(MLlibTestCase):
     def _test_serialize(self, v):
+        from pyspark.jvm_bridge import get_bridge
+
+        jvm = get_bridge().jvm
         ser = CPickleSerializer()
         self.assertEqual(v, ser.loads(ser.dumps(v)))
-        jvec = self.sc._jvm.org.apache.spark.mllib.api.python.SerDe.loads(bytearray(ser.dumps(v)))
-        nv = ser.loads(bytes(self.sc._jvm.org.apache.spark.mllib.api.python.SerDe.dumps(jvec)))
+        jvec = jvm.org.apache.spark.mllib.api.python.SerDe.loads(bytearray(ser.dumps(v)))
+        nv = ser.loads(bytes(jvm.org.apache.spark.mllib.api.python.SerDe.dumps(jvec)))
         self.assertEqual(v, nv)
         vs = [v] * 100
-        jvecs = self.sc._jvm.org.apache.spark.mllib.api.python.SerDe.loads(bytearray(ser.dumps(vs)))
-        nvs = ser.loads(bytes(self.sc._jvm.org.apache.spark.mllib.api.python.SerDe.dumps(jvecs)))
+        jvecs = jvm.org.apache.spark.mllib.api.python.SerDe.loads(bytearray(ser.dumps(vs)))
+        nvs = ser.loads(bytes(jvm.org.apache.spark.mllib.api.python.SerDe.dumps(jvecs)))
         self.assertEqual(vs, nvs)
 
     def test_serialize(self):

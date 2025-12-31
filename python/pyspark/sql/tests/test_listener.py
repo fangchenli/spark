@@ -73,17 +73,22 @@ class QueryExecutionListenerTests(
             cls.spark.stop()
 
     def tearDown(self):
-        self.spark._jvm.OnSuccessCall.clear()
+        from pyspark.jvm_bridge import get_bridge
+
+        get_bridge().jvm.OnSuccessCall.clear()
 
     def test_query_execution_listener_on_collect(self):
+        from pyspark.jvm_bridge import get_bridge
+
+        jvm = get_bridge().jvm
         self.assertFalse(
-            self.spark._jvm.OnSuccessCall.isCalled(),
+            jvm.OnSuccessCall.isCalled(),
             "The callback from the query execution listener should not be called before 'collect'",
         )
         self.spark.sql("SELECT * FROM range(1)").collect()
         self.spark.sparkContext._jsc.sc().listenerBus().waitUntilEmpty(10000)
         self.assertTrue(
-            self.spark._jvm.OnSuccessCall.isCalled(),
+            jvm.OnSuccessCall.isCalled(),
             "The callback from the query execution listener should be called after 'collect'",
         )
 
@@ -92,16 +97,19 @@ class QueryExecutionListenerTests(
         cast(str, pandas_requirement_message or pyarrow_requirement_message),
     )
     def test_query_execution_listener_on_collect_with_arrow(self):
+        from pyspark.jvm_bridge import get_bridge
+
+        jvm = get_bridge().jvm
         with self.sql_conf({"spark.sql.execution.arrow.pyspark.enabled": True}):
             self.assertFalse(
-                self.spark._jvm.OnSuccessCall.isCalled(),
+                jvm.OnSuccessCall.isCalled(),
                 "The callback from the query execution listener should not be "
                 "called before 'toPandas'",
             )
             self.spark.sql("SELECT * FROM range(1)").toPandas()
             self.spark.sparkContext._jsc.sc().listenerBus().waitUntilEmpty(10000)
             self.assertTrue(
-                self.spark._jvm.OnSuccessCall.isCalled(),
+                jvm.OnSuccessCall.isCalled(),
                 "The callback from the query execution listener should be called after 'toPandas'",
             )
 

@@ -29,9 +29,8 @@ try:
 except ImportError:
     has_resource_module = False
 
-from py4j.protocol import Py4JJavaError
-
 from pyspark import SparkConf, SparkContext
+from pyspark.jvm_bridge import get_bridge
 from pyspark.testing.utils import ReusedPySparkTestCase, PySparkTestCase, QuietTest, eventually
 
 
@@ -106,6 +105,7 @@ class WorkerTests(ReusedPySparkTestCase):
             raise RuntimeError()
 
         rdd = self.sc.parallelize(range(100), 1)
+        Py4JJavaError = get_bridge().get_java_exception_class()
         with QuietTest(self.sc):
             self.assertRaises(Py4JJavaError, lambda: rdd.foreach(raise_exception))
         self.assertEqual(100, rdd.map(str).count())
@@ -168,6 +168,7 @@ class WorkerTests(ReusedPySparkTestCase):
         rdd.count()
         version = self.sc.pythonVer
         self.sc.pythonVer = "2.0"
+        Py4JJavaError = get_bridge().get_java_exception_class()
         try:
             with QuietTest(self.sc):
                 self.assertRaises(Py4JJavaError, lambda: rdd.count())
@@ -176,6 +177,7 @@ class WorkerTests(ReusedPySparkTestCase):
 
     def test_python_exception_non_hanging(self):
         # SPARK-21045: exceptions with no ascii encoding shall not hanging PySpark.
+        Py4JJavaError = get_bridge().get_java_exception_class()
         try:
 
             def f():
@@ -233,6 +235,7 @@ class WorkerSegfaultTest(ReusedPySparkTestCase):
 
     @unittest.skipIf(sys.version_info > (3, 12), "SPARK-46130: Flaky with Python 3.12")
     def test_python_segfault(self):
+        Py4JJavaError = get_bridge().get_java_exception_class()
         try:
 
             def f():

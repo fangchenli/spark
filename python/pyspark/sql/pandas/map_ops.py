@@ -91,8 +91,10 @@ class PandasMapOpsMixin:
             if profile._java_resource_profile is not None:
                 jrp = profile._java_resource_profile
             else:
-                jvm = self.sparkSession.sparkContext._jvm
-                assert jvm is not None
+                from pyspark.jvm_bridge import get_bridge
+
+                bridge = get_bridge()
+                jvm = bridge.jvm
 
                 builder = getattr(jvm, "org.apache.spark.resource.ResourceProfileBuilder")()
                 ereqs = ExecutorResourceRequests(jvm, profile._executor_resource_requests)

@@ -17,8 +17,7 @@
 
 import unittest
 
-import py4j
-
+from pyspark.jvm_bridge import get_bridge
 from pyspark.ml.linalg import DenseVector, Vectors
 from pyspark.ml.regression import LinearRegression
 from pyspark.ml.wrapper import (
@@ -51,6 +50,7 @@ class JavaWrapperMemoryTests(SparkSessionTestCase):
         self.assertNotIsInstance(summary, JavaParams)
 
         error_no_object = "Target Object ID does not exist for this gateway"
+        Py4JError = get_bridge().get_protocol_error_class()
 
         self.assertIn("LinearRegression_", model._java_obj.toString())
         self.assertIn("LinearRegressionTrainingSummary", summary._java_obj.toString())
@@ -58,7 +58,7 @@ class JavaWrapperMemoryTests(SparkSessionTestCase):
         model.__del__()
 
         def condition():
-            with self.assertRaisesRegex(py4j.protocol.Py4JError, error_no_object):
+            with self.assertRaisesRegex(Py4JError, error_no_object):
                 model._java_obj.toString()
             self.assertIn("LinearRegressionTrainingSummary", summary._java_obj.toString())
             return True
@@ -71,9 +71,9 @@ class JavaWrapperMemoryTests(SparkSessionTestCase):
             pass
 
         def condition():
-            with self.assertRaisesRegex(py4j.protocol.Py4JError, error_no_object):
+            with self.assertRaisesRegex(Py4JError, error_no_object):
                 model._java_obj.toString()
-            with self.assertRaisesRegex(py4j.protocol.Py4JError, error_no_object):
+            with self.assertRaisesRegex(Py4JError, error_no_object):
                 summary._java_obj.toString()
             return True
 

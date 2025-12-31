@@ -98,7 +98,6 @@ class Observation:
                     messageParameters={"arg_name": "name", "arg_value": name},
                 )
         self._name = name
-        self._jvm: Optional[JVMView] = None
         self._jo: Optional["JavaObjectRef"] = None
 
     def _on(self, df: DataFrame, *exprs: Column) -> DataFrame:
@@ -122,7 +121,6 @@ class Observation:
         if self._jo is not None:
             raise PySparkAssertionError(errorClass="REUSE_OBSERVATION", messageParameters={})
 
-        self._jvm = df._sc._jvm
         bridge = get_bridge()
         if self._name is not None:
             self._jo = bridge.new("org.apache.spark.sql.Observation", self._name)

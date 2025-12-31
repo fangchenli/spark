@@ -1191,12 +1191,13 @@ class DataSourceRegistration:
         """
         from pyspark.sql.udf import _wrap_function
 
+        from pyspark.jvm_bridge import get_bridge
+
         name = dataSource.name()
         sc = self.sparkSession.sparkContext
         # Serialize the data source class.
         wrapped = _wrap_function(sc, dataSource)
-        assert sc._jvm is not None
-        jvm = sc._jvm
+        jvm = get_bridge().jvm
         ds = getattr(
             jvm, "org.apache.spark.sql.execution.datasources.v2.python.UserDefinedPythonDataSource"
         )(wrapped)

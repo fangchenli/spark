@@ -23,9 +23,8 @@ import time
 import unittest
 from glob import glob
 
-from py4j.protocol import Py4JJavaError
-
 from pyspark import shuffle, RDD
+from pyspark.jvm_bridge import get_bridge
 from pyspark.resource import ExecutorResourceRequests, ResourceProfileBuilder, TaskResourceRequests
 from pyspark.serializers import (
     CloudPickleSerializer,
@@ -674,7 +673,10 @@ class RDDTests(ReusedPySparkTestCase):
         self.assertNotEqual(set(wr_s11), set(wr_s21))
 
     def test_null_in_rdd(self):
-        jrdd = self.sc._jvm.PythonUtils.generateRDDWithNull(self.sc._jsc)
+        from pyspark.jvm_bridge import get_bridge
+
+        jvm = get_bridge().jvm
+        jrdd = jvm.PythonUtils.generateRDDWithNull(self.sc._jsc)
         rdd = RDD(jrdd, self.sc, UTF8Deserializer())
         self.assertEqual(["a", None, "b"], rdd.collect())
         rdd = RDD(jrdd, self.sc, NoOpSerializer())
@@ -682,16 +684,19 @@ class RDDTests(ReusedPySparkTestCase):
 
     def test_multiple_python_java_RDD_conversions(self):
         # Regression test for SPARK-5361
+        from pyspark.jvm_bridge import get_bridge
+
+        jvm = get_bridge().jvm
         data = [("1", {"director": "David Lean"}), ("2", {"director": "Andrew Dominik"})]
         data_rdd = self.sc.parallelize(data)
         data_java_rdd = data_rdd._to_java_object_rdd()
-        data_python_rdd = self.sc._jvm.SerDeUtil.javaToPython(data_java_rdd)
+        data_python_rdd = jvm.SerDeUtil.javaToPython(data_java_rdd)
         converted_rdd = RDD(data_python_rdd, self.sc)
         self.assertEqual(2, converted_rdd.count())
 
         # conversion between python and java RDD threw exceptions
         data_java_rdd = converted_rdd._to_java_object_rdd()
-        data_python_rdd = self.sc._jvm.SerDeUtil.javaToPython(data_java_rdd)
+        data_python_rdd = jvm.SerDeUtil.javaToPython(data_java_rdd)
         converted_rdd = RDD(data_python_rdd, self.sc)
         self.assertEqual(2, converted_rdd.count())
 
@@ -749,6 +754,7 @@ class RDDTests(ReusedPySparkTestCase):
     def test_pipe_functions(self):
         data = ["1", "2", "3"]
         rdd = self.sc.parallelize(data)
+        Py4JJavaError = get_bridge().get_java_exception_class()
         with QuietTest(self.sc):
             self.assertEqual([], rdd.pipe("java").collect())
             self.assertRaises(Py4JJavaError, rdd.pipe("java", checkCode=True).collect)
@@ -773,6 +779,7 @@ class RDDTests(ReusedPySparkTestCase):
         seq_rdd = self.sc.parallelize(range(10))
         keyed_rdd = self.sc.parallelize((x % 2, x) for x in range(10))
         msg = "Caught StopIteration thrown from user's code; failing the task"
+        Py4JJavaError = get_bridge().get_java_exception_class()
 
         self.assertRaisesRegex(Py4JJavaError, msg, seq_rdd.map(stopit).collect)
         self.assertRaisesRegex(Py4JJavaError, msg, seq_rdd.filter(stopit).collect)
