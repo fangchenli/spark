@@ -1605,12 +1605,12 @@ class DataStreamWriter:
         >>> q.stop()
         >>> # if in Spark Connect, my_value = -1, else my_value = 100
         """
-        from py4j.java_gateway import java_import
         from pyspark.java_gateway import ensure_callback_server_started
+        from pyspark.jvm_bridge import get_bridge
 
         gw = self._spark._sc._gateway
         assert gw is not None
-        java_import(gw.jvm, "org.apache.spark.sql.execution.streaming.sources.*")
+        get_bridge().java_import("org.apache.spark.sql.execution.streaming.sources.*")
 
         wrapped_func = ForeachBatchFunction(self._spark, func)
         gw.jvm.PythonForeachBatchHelper.callForeachBatch(self._jwrite, wrapped_func)

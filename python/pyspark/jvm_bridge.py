@@ -462,6 +462,47 @@ class BridgeAdapter(ABC):
         """
         ...
 
+    # === Type Conversion ===
+
+    @property
+    @abstractmethod
+    def gateway_client(self) -> Any:
+        """Get the gateway client for type converters.
+
+        This is used by py4j's converter protocol where converters receive
+        the gateway_client to create JavaClass instances.
+        """
+        ...
+
+    @abstractmethod
+    def java_class(self, class_name: str) -> Any:
+        """Get a JavaClass reference for type conversion.
+
+        Args:
+            class_name: Fully qualified class name
+
+        Returns:
+            A callable class reference that can be used to call static methods
+            or create instances.
+
+        This is used by type converters that need to call static methods on
+        Java classes (e.g., Date.valueOf, LocalTime.of).
+        """
+        ...
+
+    @abstractmethod
+    def register_input_converter(self, converter: Any, prepend: bool = False) -> None:
+        """Register a Python to Java type converter.
+
+        Args:
+            converter: A converter object with can_convert(obj) and
+                      convert(obj, gateway_client) methods.
+            prepend: If True, add to front of converter list (checked first).
+
+        Converters are checked in order when Python values are passed to Java.
+        """
+        ...
+
 
 # =============================================================================
 # Py4J Adapter
@@ -591,6 +632,25 @@ class Py4JAdapter(BridgeAdapter):
         from py4j.java_gateway import java_import
 
         java_import(self._gateway.jvm, package)
+
+    # === Type Conversion ===
+
+    @property
+    def gateway_client(self) -> Any:
+        """Get the gateway client for type converters."""
+        return self._gateway._gateway_client
+
+    def java_class(self, class_name: str) -> Any:
+        """Get a JavaClass reference for type conversion."""
+        from py4j.java_gateway import JavaClass
+
+        return JavaClass(class_name, self._gateway._gateway_client)
+
+    def register_input_converter(self, converter: Any, prepend: bool = False) -> None:
+        """Register a Python to Java type converter."""
+        from py4j.protocol import register_input_converter
+
+        register_input_converter(converter, prepend=prepend)
 
 
 # =============================================================================

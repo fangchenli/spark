@@ -71,7 +71,7 @@ from pyspark.sql.geo_utils import (
 
 if TYPE_CHECKING:
     import numpy as np
-    from py4j.java_gateway import GatewayClient, JavaGateway, JavaClass
+    from pyspark.jvm_bridge import JavaObjectRef
 
 T = TypeVar("T")
 U = TypeVar("U")
@@ -3705,10 +3705,10 @@ class DateConverter:
     def can_convert(self, obj: Any) -> bool:
         return isinstance(obj, datetime.date)
 
-    def convert(self, obj: datetime.date, gateway_client: "GatewayClient") -> "JavaGateway":
-        from py4j.java_gateway import JavaClass
+    def convert(self, obj: datetime.date, gateway_client: Any) -> "JavaObjectRef":
+        from pyspark.jvm_bridge import get_bridge
 
-        Date = JavaClass("java.sql.Date", gateway_client)
+        Date = get_bridge().java_class("java.sql.Date")
         return Date.valueOf(obj.strftime("%Y-%m-%d"))
 
 
@@ -3716,10 +3716,10 @@ class TimeConverter:
     def can_convert(self, obj: Any) -> bool:
         return isinstance(obj, datetime.time)
 
-    def convert(self, obj: datetime.time, gateway_client: "GatewayClient") -> "JavaGateway":
-        from py4j.java_gateway import JavaClass
+    def convert(self, obj: datetime.time, gateway_client: Any) -> "JavaObjectRef":
+        from pyspark.jvm_bridge import get_bridge
 
-        LocalTime = JavaClass("java.time.LocalTime", gateway_client)
+        LocalTime = get_bridge().java_class("java.time.LocalTime")
         return LocalTime.of(obj.hour, obj.minute, obj.second, obj.microsecond * 1000)
 
 
@@ -3727,10 +3727,10 @@ class DatetimeConverter:
     def can_convert(self, obj: Any) -> bool:
         return isinstance(obj, datetime.datetime)
 
-    def convert(self, obj: datetime.datetime, gateway_client: "GatewayClient") -> "JavaGateway":
-        from py4j.java_gateway import JavaClass
+    def convert(self, obj: datetime.datetime, gateway_client: Any) -> "JavaObjectRef":
+        from pyspark.jvm_bridge import get_bridge
 
-        Timestamp = JavaClass("java.sql.Timestamp", gateway_client)
+        Timestamp = get_bridge().java_class("java.sql.Timestamp")
         seconds = (
             calendar.timegm(obj.utctimetuple()) if obj.tzinfo else time.mktime(obj.timetuple())
         )
@@ -3749,13 +3749,12 @@ class DatetimeNTZConverter:
             and is_timestamp_ntz_preferred()
         )
 
-    def convert(self, obj: datetime.datetime, gateway_client: "GatewayClient") -> "JavaGateway":
-        from py4j.java_gateway import JavaClass
+    def convert(self, obj: datetime.datetime, gateway_client: Any) -> "JavaObjectRef":
+        from pyspark.jvm_bridge import get_bridge
 
         seconds = calendar.timegm(obj.utctimetuple())
-        DateTimeUtils = JavaClass(
-            "org.apache.spark.sql.catalyst.util.DateTimeUtils",
-            gateway_client,
+        DateTimeUtils = get_bridge().java_class(
+            "org.apache.spark.sql.catalyst.util.DateTimeUtils"
         )
         return DateTimeUtils.microsToLocalDateTime(int(seconds) * 1000000 + obj.microsecond)
 
@@ -3764,12 +3763,11 @@ class DayTimeIntervalTypeConverter:
     def can_convert(self, obj: Any) -> bool:
         return isinstance(obj, datetime.timedelta)
 
-    def convert(self, obj: datetime.timedelta, gateway_client: "GatewayClient") -> "JavaGateway":
-        from py4j.java_gateway import JavaClass
+    def convert(self, obj: datetime.timedelta, gateway_client: Any) -> "JavaObjectRef":
+        from pyspark.jvm_bridge import get_bridge
 
-        IntervalUtils = JavaClass(
-            "org.apache.spark.sql.catalyst.util.IntervalUtils",
-            gateway_client,
+        IntervalUtils = get_bridge().java_class(
+            "org.apache.spark.sql.catalyst.util.IntervalUtils"
         )
         return IntervalUtils.microsToDuration(
             (math.floor(obj.total_seconds()) * 1000000) + obj.microseconds
@@ -3786,7 +3784,7 @@ class NumpyScalarConverter:
             return isinstance(obj, np.generic)
         return False
 
-    def convert(self, obj: "np.generic", gateway_client: "GatewayClient") -> Any:
+    def convert(self, obj: "np.generic", gateway_client: Any) -> Any:
         return obj.item()
 
 
@@ -3823,7 +3821,7 @@ class NumpyArrayConverter:
             return isinstance(obj, np.ndarray) and obj.ndim == 1
         return False
 
-    def convert(self, obj: "np.ndarray", gateway_client: "GatewayClient") -> "JavaGateway":
+    def convert(self, obj: "np.ndarray", gateway_client: Any) -> "JavaObjectRef":
         from pyspark.jvm_bridge import get_bridge
 
         plist = obj.tolist()
@@ -3841,19 +3839,25 @@ class NumpyArrayConverter:
         return jarr
 
 
-if not is_remote_only():
-    from py4j.protocol import register_input_converter
+def _register_type_converters() -> None:
+    """Register type converters with the bridge.
 
+    This is called after the bridge is initialized to register
+    Python to Java type converters.
+    """
+    from pyspark.jvm_bridge import get_bridge
+
+    bridge = get_bridge()
     # datetime is a subclass of date, we should register DatetimeConverter first
-    register_input_converter(DatetimeNTZConverter())
-    register_input_converter(DatetimeConverter())
-    register_input_converter(DateConverter())
-    register_input_converter(TimeConverter())
-    register_input_converter(DayTimeIntervalTypeConverter())
-    register_input_converter(NumpyScalarConverter())
+    bridge.register_input_converter(DatetimeNTZConverter())
+    bridge.register_input_converter(DatetimeConverter())
+    bridge.register_input_converter(DateConverter())
+    bridge.register_input_converter(TimeConverter())
+    bridge.register_input_converter(DayTimeIntervalTypeConverter())
+    bridge.register_input_converter(NumpyScalarConverter())
     # NumPy array satisfies py4j.java_collections.ListConverter,
     # so prepend NumpyArrayConverter
-    register_input_converter(NumpyArrayConverter(), prepend=True)
+    bridge.register_input_converter(NumpyArrayConverter(), prepend=True)
 
 
 def _test() -> None:

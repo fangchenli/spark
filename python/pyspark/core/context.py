@@ -499,6 +499,10 @@ class SparkContext:
                 SparkContext._gateway = gateway or launch_gateway(conf)
                 # Initialize the JVM bridge singleton
                 SparkContext._bridge = create_bridge_from_gateway(SparkContext._gateway)
+                # Register type converters with the bridge
+                from pyspark.sql.types import _register_type_converters
+
+                _register_type_converters()
 
             if instance:
                 if (
