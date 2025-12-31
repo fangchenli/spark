@@ -47,8 +47,7 @@ __all__: List[str] = []
 if typing.TYPE_CHECKING:
     import io
 
-    from py4j.java_collections import JavaArray
-    from py4j.java_gateway import JavaObject
+    from pyspark.jvm_bridge import JavaArrayRef, JavaObjectRef
 
     from pyspark._typing import NonUDFType
     from pyspark.sql.pandas._typing import (
@@ -546,7 +545,7 @@ class InheritableThread(threading.Thread):
     This API is experimental.
     """
 
-    _props: "JavaObject"
+    _props: "JavaObjectRef"
 
     def __init__(
         self, target: Callable, *args: Any, session: Optional["SparkSession"] = None, **kwargs: Any
@@ -668,7 +667,7 @@ class PythonEvalType:
     SQL_ARROW_UDTF: "SQLArrowUDTFType" = 302
 
 
-def _create_local_socket(sock_info: "JavaArray") -> Tuple["io.BufferedRWPair", "socket.socket"]:
+def _create_local_socket(sock_info: "JavaArrayRef") -> Tuple["io.BufferedRWPair", "socket.socket"]:
     """
     Create a local socket that can be used to load deserialized data from the JVM
 
@@ -693,7 +692,7 @@ def _create_local_socket(sock_info: "JavaArray") -> Tuple["io.BufferedRWPair", "
 
 
 @contextmanager
-def _load_from_socket(sock_info: "JavaArray", serializer: "Serializer") -> Iterator[Any]:
+def _load_from_socket(sock_info: "JavaArrayRef", serializer: "Serializer") -> Iterator[Any]:
     """
     Connect to a local socket described by sock_info and use the given serializer to yield data
 
@@ -717,14 +716,14 @@ def _load_from_socket(sock_info: "JavaArray", serializer: "Serializer") -> Itera
         sock.close()
 
 
-def _local_iterator_from_socket(sock_info: "JavaArray", serializer: "Serializer") -> Iterator[Any]:
+def _local_iterator_from_socket(sock_info: "JavaArrayRef", serializer: "Serializer") -> Iterator[Any]:
     class PyLocalIterable:
         """Create a synchronous local iterable over a socket"""
 
-        def __init__(self, _sock_info: "JavaArray", _serializer: "Serializer"):
+        def __init__(self, _sock_info: "JavaArrayRef", _serializer: "Serializer"):
             port: int
             auth_secret: str
-            self.jsocket_auth_server: "JavaObject"
+            self.jsocket_auth_server: "JavaObjectRef"
             port, auth_secret, self.jsocket_auth_server = _sock_info
             self._sockfile, self._sock = _create_local_socket((port, auth_secret))
             self._serializer = _serializer

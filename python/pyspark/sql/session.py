@@ -69,7 +69,7 @@ from pyspark.sql.utils import (
 from pyspark.errors import PySparkValueError, PySparkTypeError, PySparkRuntimeError
 
 if TYPE_CHECKING:
-    from py4j.java_gateway import JavaClass, JavaObject, JVMView
+    from pyspark.jvm_bridge import JavaObjectRef
     import pyarrow as pa
     from pyspark.core.context import SparkContext
     from pyspark.core.rdd import RDD
@@ -616,7 +616,7 @@ class SparkSession(SparkConversionMixin):
     def __init__(
         self,
         sparkContext: "SparkContext",
-        jsparkSession: Optional["JavaObject"] = None,
+        jsparkSession: Optional["JavaObjectRef"] = None,
         options: Dict[str, Any] = {},
     ):
         self._sc = sparkContext
@@ -662,11 +662,11 @@ class SparkSession(SparkConversionMixin):
         )
 
     @staticmethod
-    def _get_j_spark_session_class(jvm: "JVMView") -> "JavaClass":
+    def _get_j_spark_session_class(jvm: Any) -> Any:
         return getattr(jvm, "org.apache.spark.sql.classic.SparkSession")
 
     @staticmethod
-    def _get_j_spark_session_module(jvm: "JVMView") -> "JavaObject":
+    def _get_j_spark_session_module(jvm: Any) -> "JavaObjectRef":
         return getattr(getattr(jvm, "org.apache.spark.sql.classic.SparkSession$"), "MODULE$")
 
     def _repr_html_(self) -> str:
@@ -681,7 +681,7 @@ class SparkSession(SparkConversionMixin):
         )
 
     @property
-    def _jconf(self) -> "JavaObject":
+    def _jconf(self) -> "JavaObjectRef":
         """Accessor for the JVM SQL-specific configurations"""
         return self._jsparkSession.sessionState().conf()
 
