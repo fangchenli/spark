@@ -50,7 +50,7 @@ from pyspark.errors import PySparkTypeError, PySparkValueError
 if TYPE_CHECKING:
     import numpy as np
     import pyarrow as pa
-    from py4j.java_gateway import JavaObject
+    from pyspark.jvm_bridge import JavaObjectRef
 
     from pyspark.sql.pandas._typing import DataFrameLike as PandasDataFrameLike
     from pyspark.sql import DataFrame
@@ -451,7 +451,7 @@ class SparkConversionMixin:
     :class:`SparkSession` can use this class.
     """
 
-    _jsparkSession: "JavaObject"
+    _jsparkSession: "JavaObjectRef"
 
     @overload
     def createDataFrame(

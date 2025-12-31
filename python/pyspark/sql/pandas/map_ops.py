@@ -23,7 +23,7 @@ from pyspark.util import PythonEvalType
 from pyspark.sql.types import StructType
 
 if TYPE_CHECKING:
-    from py4j.java_gateway import JavaObject
+    from pyspark.jvm_bridge import JavaObjectRef
     from pyspark.sql.dataframe import DataFrame
     from pyspark.sql.pandas._typing import PandasMapIterFunction, ArrowMapIterFunction
 
@@ -80,7 +80,7 @@ class PandasMapOpsMixin:
 
     def _build_java_profile(
         self, profile: Optional[ResourceProfile] = None
-    ) -> Optional["JavaObject"]:
+    ) -> Optional["JavaObjectRef"]:
         """Build the java ResourceProfile based on PySpark ResourceProfile"""
         from pyspark.sql import DataFrame
 

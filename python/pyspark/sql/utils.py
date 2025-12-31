@@ -50,13 +50,7 @@ from pyspark.errors.exceptions.captured import CapturedException  # noqa: F401
 from pyspark.find_spark_home import _find_spark_home
 
 if TYPE_CHECKING:
-    from py4j.java_collections import JavaArray
-    from py4j.java_gateway import (
-        JavaClass,
-        JavaGateway,
-        JavaObject,
-        JVMView,
-    )
+    from pyspark.jvm_bridge import JavaArrayRef, JavaObjectRef
     from pyspark import SparkContext
     from pyspark.sql.session import SparkSession
     from pyspark.sql.dataframe import DataFrame
@@ -66,7 +60,7 @@ if TYPE_CHECKING:
 FuncT = TypeVar("FuncT", bound=Callable[..., Any])
 
 
-def to_java_array(jtype: str, arr: Sequence[Any]) -> "JavaArray":
+def to_java_array(jtype: str, arr: Sequence[Any]) -> "JavaArrayRef":
     """
     Convert python list to java type array
 
@@ -80,13 +74,13 @@ def to_java_array(jtype: str, arr: Sequence[Any]) -> "JavaArray":
     from pyspark.jvm_bridge import get_bridge
 
     bridge = get_bridge()
-    jarray: "JavaArray" = bridge.new_array(jtype, len(arr))
+    jarray: "JavaArrayRef" = bridge.new_array(jtype, len(arr))
     for i in range(0, len(arr)):
         bridge.array_set(jarray, i, arr[i])
     return jarray
 
 
-def to_scala_map(jvm: "JVMView", dic: Dict) -> "JavaObject":
+def to_scala_map(jvm: Any, dic: Dict) -> "JavaObjectRef":
     """
     Convert a dict into a Scala Map.
     """
@@ -152,7 +146,7 @@ class ForeachBatchFunction:
         self.func = func
         self.session = session
 
-    def call(self, jdf: "JavaObject", batch_id: int) -> None:
+    def call(self, jdf: "JavaObjectRef", batch_id: int) -> None:
         from pyspark.sql.dataframe import DataFrame
         from pyspark.sql.session import SparkSession
 
