@@ -6608,11 +6608,14 @@ def broadcast(df: "DataFrame") -> "DataFrame":
     |    2|  2|
     +-----+---+
     """
-    from py4j.java_gateway import JVMView
+    from pyspark.jvm_bridge import get_bridge
     from pyspark.sql.dataframe import DataFrame
 
-    sc = _get_active_spark_context()
-    return DataFrame(cast(JVMView, sc._jvm).functions.broadcast(df._jdf), df.sparkSession)
+    bridge = get_bridge()
+    return DataFrame(
+        bridge.call_static("org.apache.spark.sql.functions", "broadcast", df._jdf),
+        df.sparkSession,
+    )
 
 
 @_try_remote_functions
@@ -23354,10 +23357,12 @@ def _unresolved_named_lambda_variable(name: str) -> Column:
     ----------
     name_parts : str
     """
-    from py4j.java_gateway import JVMView
+    from pyspark.jvm_bridge import get_bridge
 
-    sc = _get_active_spark_context()
-    return Column(cast(JVMView, sc._jvm).PythonSQLUtils.unresolvedNamedLambdaVariable(name))
+    bridge = get_bridge()
+    return Column(
+        bridge.call_static("org.apache.spark.sql.api.python.PythonSQLUtils", "unresolvedNamedLambdaVariable", name)
+    )
 
 
 def _get_lambda_parameters(f: Callable) -> ValuesView[inspect.Parameter]:
@@ -23400,7 +23405,7 @@ def _create_lambda(f: Callable) -> Callable:
             - (Column, Column) -> Column: ...
             - (Column, Column, Column) -> Column: ...
     """
-    from py4j.java_gateway import JVMView
+    from pyspark.jvm_bridge import get_bridge
     from pyspark.sql.classic.column import _to_seq
 
     parameters = _get_lambda_parameters(f)
@@ -23420,7 +23425,8 @@ def _create_lambda(f: Callable) -> Callable:
 
     jexpr = result._jc
     jargs = _to_seq(sc, [arg._jc for arg in args])
-    return cast(JVMView, sc._jvm).PythonSQLUtils.lambdaFunction(jexpr, jargs)
+    bridge = get_bridge()
+    return bridge.call_static("org.apache.spark.sql.api.python.PythonSQLUtils", "lambdaFunction", jexpr, jargs)
 
 
 def _invoke_higher_order_function(
@@ -23439,13 +23445,14 @@ def _invoke_higher_order_function(
 
     :return: a Column
     """
-    from py4j.java_gateway import JVMView
+    from pyspark.jvm_bridge import get_bridge
     from pyspark.sql.classic.column import _to_seq, _to_java_column
 
     sc = _get_active_spark_context()
     jfuns = [_create_lambda(f) for f in funs]
     jcols = [_to_java_column(c) for c in cols]
-    return Column(cast(JVMView, sc._jvm).PythonSQLUtils.fn(name, _to_seq(sc, jcols + jfuns)))
+    bridge = get_bridge()
+    return Column(bridge.call_static("org.apache.spark.sql.api.python.PythonSQLUtils", "fn", name, _to_seq(sc, jcols + jfuns)))
 
 
 @overload

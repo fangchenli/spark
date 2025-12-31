@@ -78,7 +78,7 @@ def from_avro(
     >>> avroDf.select(from_avro(avroDf.avro, jsonFormatSchema).alias("value")).collect()
     [Row(value=Row(avro=Row(age=2, name='Alice')))]
     """
-    from py4j.java_gateway import JVMView
+    from pyspark.jvm_bridge import get_bridge
     from pyspark.sql.classic.column import _to_java_column
 
     if not isinstance(data, (Column, str)):
@@ -102,7 +102,6 @@ def from_avro(
 
     sc = get_active_spark_context()
     try:
-        from pyspark.jvm_bridge import get_bridge
 
         bridge = get_bridge()
         jc = bridge.call_static(
@@ -155,7 +154,7 @@ def to_avro(data: "ColumnOrName", jsonFormatSchema: str = "") -> Column:
     >>> df.select(to_avro(df.value, jsonFormatSchema).alias("suite")).collect()
     [Row(suite=b'\\x02\\x00')]
     """
-    from py4j.java_gateway import JVMView
+    from pyspark.jvm_bridge import get_bridge
     from pyspark.sql.classic.column import _to_java_column
 
     if not isinstance(data, (Column, str)):
@@ -174,8 +173,6 @@ def to_avro(data: "ColumnOrName", jsonFormatSchema: str = "") -> Column:
 
     sc = get_active_spark_context()
     try:
-        from pyspark.jvm_bridge import get_bridge
-
         bridge = get_bridge()
         if jsonFormatSchema == "":
             jc = bridge.call_static(

@@ -24,7 +24,7 @@ from pyspark.sql.utils import to_str
 from pyspark.errors import PySparkTypeError, PySparkValueError
 
 if TYPE_CHECKING:
-    from py4j.java_gateway import JavaObject
+    from pyspark.jvm_bridge import JavaObjectRef
     from pyspark.core.rdd import RDD
     from pyspark.sql._typing import OptionalPrimitiveType, ColumnOrName
     from pyspark.sql.session import SparkSession
@@ -69,7 +69,7 @@ class DataFrameReader(OptionUtils):
         self._jreader = spark._jsparkSession.read()
         self._spark = spark
 
-    def _df(self, jdf: "JavaObject") -> "DataFrame":
+    def _df(self, jdf: "JavaObjectRef") -> "DataFrame":
         from pyspark.sql.dataframe import DataFrame
 
         return DataFrame(jdf, self._spark)
@@ -1179,15 +1179,11 @@ class DataFrameReader(OptionUtils):
         -------
         :class:`DataFrame`
         """
-        from py4j.java_gateway import JavaClass
+        from pyspark.jvm_bridge import get_bridge
 
         if properties is None:
             properties = dict()
-        assert self._spark._sc._gateway is not None
-        jprop = JavaClass(
-            "java.util.Properties",
-            self._spark._sc._gateway._gateway_client,
-        )()
+        jprop = get_bridge().new("java.util.Properties")
         for k in properties:
             jprop.setProperty(k, properties[k])
         if column is not None:
@@ -1224,7 +1220,7 @@ class DataFrameWriter(OptionUtils):
         self._spark = df.sparkSession
         self._jwrite = df._jdf.write()
 
-    def _sq(self, jsq: "JavaObject") -> "StreamingQuery":
+    def _sq(self, jsq: "JavaObjectRef") -> "StreamingQuery":
         from pyspark.sql.streaming import StreamingQuery
 
         return StreamingQuery(jsq)
@@ -2358,16 +2354,12 @@ class DataFrameWriter(OptionUtils):
         Don't create too many partitions in parallel on a large cluster;
         otherwise Spark might crash your external database systems.
         """
-        from py4j.java_gateway import JavaClass
+        from pyspark.jvm_bridge import get_bridge
 
         if properties is None:
             properties = dict()
 
-        assert self._spark._sc._gateway is not None
-        jprop = JavaClass(
-            "java.util.Properties",
-            self._spark._sc._gateway._gateway_client,
-        )()
+        jprop = get_bridge().new("java.util.Properties")
         for k in properties:
             jprop.setProperty(k, properties[k])
         self.mode(mode)._jwrite.jdbc(url, table, jprop)

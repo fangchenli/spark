@@ -20,7 +20,7 @@ A collections of builtin protobuf functions
 """
 
 
-from typing import Dict, Optional, TYPE_CHECKING, cast
+from typing import Dict, Optional, TYPE_CHECKING
 
 from pyspark.sql.column import Column
 from pyspark.sql.utils import get_active_spark_context, try_remote_protobuf_functions
@@ -138,24 +138,34 @@ def from_protobuf(
     |{1668035962, 2020}|
     +------------------+
     """
-    from py4j.java_gateway import JVMView
+    from pyspark.jvm_bridge import get_bridge
     from pyspark.sql.classic.column import _to_java_column
 
     sc = get_active_spark_context()
     try:
+        bridge = get_bridge()
         binary_proto = None
         if binaryDescriptorSet is not None:
             binary_proto = binaryDescriptorSet
         elif descFilePath is not None:
             binary_proto = _read_descriptor_set_file(descFilePath)
         if binary_proto is not None:
-            jc = getattr(
-                cast(JVMView, sc._jvm), "org.apache.spark.sql.protobuf.functions"
-            ).from_protobuf(_to_java_column(data), messageName, binary_proto, options or {})
+            jc = bridge.call_static(
+                "org.apache.spark.sql.protobuf.functions",
+                "from_protobuf",
+                _to_java_column(data),
+                messageName,
+                binary_proto,
+                options or {},
+            )
         else:
-            jc = getattr(
-                cast(JVMView, sc._jvm), "org.apache.spark.sql.protobuf.functions"
-            ).from_protobuf(_to_java_column(data), messageName, options or {})
+            jc = bridge.call_static(
+                "org.apache.spark.sql.protobuf.functions",
+                "from_protobuf",
+                _to_java_column(data),
+                messageName,
+                options or {},
+            )
     except TypeError as e:
         if str(e) == "'JavaPackage' object is not callable":
             _print_missing_jar("Protobuf", "protobuf", "protobuf", sc.version)
@@ -260,24 +270,34 @@ def to_protobuf(
     |[08 FA EA B0 9B 06 10 E4 0F]|
     +----------------------------+
     """
-    from py4j.java_gateway import JVMView
+    from pyspark.jvm_bridge import get_bridge
     from pyspark.sql.classic.column import _to_java_column
 
     sc = get_active_spark_context()
     try:
+        bridge = get_bridge()
         binary_proto = None
         if binaryDescriptorSet is not None:
             binary_proto = binaryDescriptorSet
         elif descFilePath is not None:
             binary_proto = _read_descriptor_set_file(descFilePath)
         if binary_proto is not None:
-            jc = getattr(
-                cast(JVMView, sc._jvm), "org.apache.spark.sql.protobuf.functions"
-            ).to_protobuf(_to_java_column(data), messageName, binary_proto, options or {})
+            jc = bridge.call_static(
+                "org.apache.spark.sql.protobuf.functions",
+                "to_protobuf",
+                _to_java_column(data),
+                messageName,
+                binary_proto,
+                options or {},
+            )
         else:
-            jc = getattr(
-                cast(JVMView, sc._jvm), "org.apache.spark.sql.protobuf.functions"
-            ).to_protobuf(_to_java_column(data), messageName, options or {})
+            jc = bridge.call_static(
+                "org.apache.spark.sql.protobuf.functions",
+                "to_protobuf",
+                _to_java_column(data),
+                messageName,
+                options or {},
+            )
 
     except TypeError as e:
         if str(e) == "'JavaPackage' object is not callable":
