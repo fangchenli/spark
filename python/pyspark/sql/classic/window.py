@@ -24,8 +24,9 @@ from pyspark.sql.window import (
 from pyspark.sql.utils import get_active_spark_context
 
 if TYPE_CHECKING:
-    from py4j.java_gateway import JavaObject
     from pyspark.sql._typing import ColumnOrName
+
+from pyspark.jvm_bridge import JavaObjectRef
 
 
 __all__ = ["Window", "WindowSpec"]
@@ -33,7 +34,7 @@ __all__ = ["Window", "WindowSpec"]
 
 def _to_java_cols(
     cols: Tuple[Union["ColumnOrName", Sequence["ColumnOrName"]], ...]
-) -> "JavaObject":
+) -> "JavaObjectRef":
     from pyspark.sql.classic.column import _to_seq, _to_java_column
 
     if len(cols) == 1 and isinstance(cols[0], list):
@@ -45,60 +46,60 @@ def _to_java_cols(
 class Window(ParentWindow):
     @staticmethod
     def partitionBy(*cols: Union["ColumnOrName", Sequence["ColumnOrName"]]) -> ParentWindowSpec:
-        from py4j.java_gateway import JVMView
+        from pyspark.jvm_bridge import get_bridge
 
-        sc = get_active_spark_context()
-        jspec = getattr(
-            cast(JVMView, sc._jvm), "org.apache.spark.sql.expressions.Window"
-        ).partitionBy(_to_java_cols(cols))
+        bridge = get_bridge()
+        jspec = bridge.call_static(
+            "org.apache.spark.sql.expressions.Window", "partitionBy", _to_java_cols(cols)
+        )
         return WindowSpec(jspec)
 
     @staticmethod
     def orderBy(*cols: Union["ColumnOrName", Sequence["ColumnOrName"]]) -> ParentWindowSpec:
-        from py4j.java_gateway import JVMView
+        from pyspark.jvm_bridge import get_bridge
 
-        sc = get_active_spark_context()
-        jspec = getattr(cast(JVMView, sc._jvm), "org.apache.spark.sql.expressions.Window").orderBy(
-            _to_java_cols(cols)
+        bridge = get_bridge()
+        jspec = bridge.call_static(
+            "org.apache.spark.sql.expressions.Window", "orderBy", _to_java_cols(cols)
         )
         return WindowSpec(jspec)
 
     @staticmethod
     def rowsBetween(start: int, end: int) -> ParentWindowSpec:
-        from py4j.java_gateway import JVMView
+        from pyspark.jvm_bridge import get_bridge
 
         if start <= Window._PRECEDING_THRESHOLD:
             start = Window.unboundedPreceding
         if end >= Window._FOLLOWING_THRESHOLD:
             end = Window.unboundedFollowing
-        sc = get_active_spark_context()
-        jspec = getattr(
-            cast(JVMView, sc._jvm), "org.apache.spark.sql.expressions.Window"
-        ).rowsBetween(start, end)
+        bridge = get_bridge()
+        jspec = bridge.call_static(
+            "org.apache.spark.sql.expressions.Window", "rowsBetween", start, end
+        )
         return WindowSpec(jspec)
 
     @staticmethod
     def rangeBetween(start: int, end: int) -> ParentWindowSpec:
-        from py4j.java_gateway import JVMView
+        from pyspark.jvm_bridge import get_bridge
 
         if start <= Window._PRECEDING_THRESHOLD:
             start = Window.unboundedPreceding
         if end >= Window._FOLLOWING_THRESHOLD:
             end = Window.unboundedFollowing
-        sc = get_active_spark_context()
-        jspec = getattr(
-            cast(JVMView, sc._jvm), "org.apache.spark.sql.expressions.Window"
-        ).rangeBetween(start, end)
+        bridge = get_bridge()
+        jspec = bridge.call_static(
+            "org.apache.spark.sql.expressions.Window", "rangeBetween", start, end
+        )
         return WindowSpec(jspec)
 
 
 class WindowSpec(ParentWindowSpec):
-    def __new__(cls, jspec: "JavaObject") -> "WindowSpec":
+    def __new__(cls, jspec: "JavaObjectRef") -> "WindowSpec":
         self = object.__new__(cls)
         self.__init__(jspec)  # type: ignore[misc]
         return self
 
-    def __init__(self, jspec: "JavaObject") -> None:
+    def __init__(self, jspec: "JavaObjectRef") -> None:
         self._jspec = jspec
 
     def partitionBy(

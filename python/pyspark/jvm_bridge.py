@@ -185,8 +185,13 @@ def is_java_object(obj: Any) -> bool:
     except ImportError:
         pass
 
-    # Check protocol
-    return isinstance(obj, JavaObjectRef)
+    # For non-py4j backends, check for specific attributes that indicate a Java object
+    # The JavaObjectRef protocol is too loose (only checks __repr__) so we need
+    # additional checks for Java-specific attributes
+    if hasattr(obj, "_get_object_id") or hasattr(obj, "getClass"):
+        return True
+
+    return False
 
 
 def is_java_array(obj: Any) -> bool:
@@ -199,7 +204,11 @@ def is_java_array(obj: Any) -> bool:
     except ImportError:
         pass
 
-    return isinstance(obj, JavaArrayRef)
+    # Don't rely on protocol check alone since many Python objects implement
+    # the same interface. Check for Java-specific attribute.
+    if hasattr(obj, "_get_object_id"):
+        return isinstance(obj, JavaArrayRef)
+    return False
 
 
 def is_java_list(obj: Any) -> bool:
@@ -212,7 +221,11 @@ def is_java_list(obj: Any) -> bool:
     except ImportError:
         pass
 
-    return isinstance(obj, JavaListRef)
+    # Don't rely on protocol check alone since many Python objects implement
+    # the same interface. Check for Java-specific attribute.
+    if hasattr(obj, "_get_object_id"):
+        return isinstance(obj, JavaListRef)
+    return False
 
 
 def is_java_map(obj: Any) -> bool:
@@ -225,7 +238,11 @@ def is_java_map(obj: Any) -> bool:
     except ImportError:
         pass
 
-    return isinstance(obj, JavaMapRef)
+    # Don't rely on protocol check alone since many Python objects implement
+    # the same interface. Check for Java-specific attribute.
+    if hasattr(obj, "_get_object_id"):
+        return isinstance(obj, JavaMapRef)
+    return False
 
 
 def convert_java_map_to_dict(java_map: Any) -> Dict[Any, Any]:

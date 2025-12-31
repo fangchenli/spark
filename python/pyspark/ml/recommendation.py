@@ -33,8 +33,7 @@ from pyspark.ml.param import Params, TypeConverters, Param
 from pyspark.ml.util import JavaMLWritable, JavaMLReadable, try_remote_attribute_relation
 from pyspark.sql import DataFrame
 
-if TYPE_CHECKING:
-    from py4j.java_gateway import JavaObject
+from pyspark.jvm_bridge import JavaObjectRef
 
 
 __all__ = ["ALS", "ALSModel"]
@@ -434,7 +433,7 @@ class ALS(JavaEstimator["ALSModel"], _ALSParams, JavaMLWritable, JavaMLReadable[
         kwargs = self._input_kwargs
         return self._set(**kwargs)
 
-    def _create_model(self, java_model: "JavaObject") -> "ALSModel":
+    def _create_model(self, java_model: "JavaObjectRef") -> "ALSModel":
         return ALSModel(java_model)
 
     @since("1.4.0")

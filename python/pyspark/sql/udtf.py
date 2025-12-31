@@ -36,10 +36,11 @@ from pyspark.sql.types import DataType, StructType, _parse_datatype_string
 from pyspark.sql.udf import _wrap_function
 
 if TYPE_CHECKING:
-    from py4j.java_gateway import JavaObject
     from pyspark.sql._typing import TVFArgumentOrName
     from pyspark.sql.dataframe import DataFrame
     from pyspark.sql.session import SparkSession
+
+from pyspark.jvm_bridge import JavaObjectRef
 
 __all__ = [
     "AnalyzeArgument",
@@ -371,12 +372,12 @@ class UserDefinedTableFunction:
         return self._returnType_placeholder
 
     @property
-    def _judtf(self) -> "JavaObject":
+    def _judtf(self) -> "JavaObjectRef":
         if self._judtf_placeholder is None:
             self._judtf_placeholder = self._create_judtf(self.func)
         return self._judtf_placeholder
 
-    def _create_judtf(self, func: Type) -> "JavaObject":
+    def _create_judtf(self, func: Type) -> "JavaObjectRef":
         from pyspark.sql import SparkSession
 
         spark = SparkSession._getActiveSessionOrCreate()

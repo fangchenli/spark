@@ -24,8 +24,7 @@ from pyspark.sql.column import Column
 from pyspark.sql.dataframe import DataFrame
 from pyspark.sql.utils import is_remote
 
-if TYPE_CHECKING:
-    from py4j.java_gateway import JavaObject, JVMView
+from pyspark.jvm_bridge import JavaObjectRef
 
 
 __all__ = ["Observation"]
@@ -100,7 +99,7 @@ class Observation:
                 )
         self._name = name
         self._jvm: Optional[JVMView] = None
-        self._jo: Optional["JavaObject"] = None
+        self._jo: Optional["JavaObjectRef"] = None
 
     def _on(self, df: DataFrame, *exprs: Column) -> DataFrame:
         """Attaches this observation to the given :class:`DataFrame` to observe aggregations.
@@ -118,14 +117,17 @@ class Observation:
             the observed :class:`DataFrame`.
         """
         from pyspark.sql.classic.column import _to_seq
+        from pyspark.jvm_bridge import get_bridge
 
         if self._jo is not None:
             raise PySparkAssertionError(errorClass="REUSE_OBSERVATION", messageParameters={})
 
         self._jvm = df._sc._jvm
-        assert self._jvm is not None
-        cls = getattr(self._jvm, "org.apache.spark.sql.Observation")
-        self._jo = cls(self._name) if self._name is not None else cls()
+        bridge = get_bridge()
+        if self._name is not None:
+            self._jo = bridge.new("org.apache.spark.sql.Observation", self._name)
+        else:
+            self._jo = bridge.new("org.apache.spark.sql.Observation")
         observed_df = df._jdf.observe(
             self._jo, exprs[0]._jc, _to_seq(df._sc, [c._jc for c in exprs[1:]])
         )
@@ -146,10 +148,13 @@ class Observation:
         if self._jo is None:
             raise PySparkAssertionError(errorClass="NO_OBSERVE_BEFORE_GET", messageParameters={})
 
-        assert self._jvm is not None
-        utils = getattr(self._jvm, "org.apache.spark.sql.api.python.PythonSQLUtils")
-        jrow = self._jo.getRow()
-        row: Row = CPickleSerializer().loads(utils.toPyRow(jrow))
+        from pyspark.jvm_bridge import get_bridge
+
+        bridge = get_bridge()
+        jrow = bridge.call(self._jo, "getRow")
+        row: Row = CPickleSerializer().loads(
+            bridge.call_static("org.apache.spark.sql.api.python.PythonSQLUtils", "toPyRow", jrow)
+        )
         return row.asDict(recursive=False)
 
 

@@ -102,8 +102,15 @@ def from_avro(
 
     sc = get_active_spark_context()
     try:
-        jc = getattr(cast(JVMView, sc._jvm), "org.apache.spark.sql.avro.functions").from_avro(
-            _to_java_column(data), jsonFormatSchema, options or {}
+        from pyspark.jvm_bridge import get_bridge
+
+        bridge = get_bridge()
+        jc = bridge.call_static(
+            "org.apache.spark.sql.avro.functions",
+            "from_avro",
+            _to_java_column(data),
+            jsonFormatSchema,
+            options or {},
         )
     except TypeError as e:
         if str(e) == "'JavaPackage' object is not callable":
@@ -167,13 +174,19 @@ def to_avro(data: "ColumnOrName", jsonFormatSchema: str = "") -> Column:
 
     sc = get_active_spark_context()
     try:
+        from pyspark.jvm_bridge import get_bridge
+
+        bridge = get_bridge()
         if jsonFormatSchema == "":
-            jc = getattr(cast(JVMView, sc._jvm), "org.apache.spark.sql.avro.functions").to_avro(
-                _to_java_column(data)
+            jc = bridge.call_static(
+                "org.apache.spark.sql.avro.functions", "to_avro", _to_java_column(data)
             )
         else:
-            jc = getattr(cast(JVMView, sc._jvm), "org.apache.spark.sql.avro.functions").to_avro(
-                _to_java_column(data), jsonFormatSchema
+            jc = bridge.call_static(
+                "org.apache.spark.sql.avro.functions",
+                "to_avro",
+                _to_java_column(data),
+                jsonFormatSchema,
             )
     except TypeError as e:
         if str(e) == "'JavaPackage' object is not callable":

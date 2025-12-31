@@ -57,7 +57,8 @@ from pyspark.sql.utils import is_remote
 
 if TYPE_CHECKING:
     from pyspark.ml._typing import M
-    from py4j.java_gateway import JavaObject
+
+from pyspark.jvm_bridge import JavaObjectRef
 
 
 __all__ = [
@@ -429,7 +430,7 @@ class GaussianMixture(
         kwargs = self._input_kwargs
         self.setParams(**kwargs)
 
-    def _create_model(self, java_model: "JavaObject") -> "GaussianMixtureModel":
+    def _create_model(self, java_model: "JavaObjectRef") -> "GaussianMixtureModel":
         return GaussianMixtureModel(java_model)
 
     @keyword_only
@@ -805,7 +806,7 @@ class KMeans(JavaEstimator[KMeansModel], _KMeansParams, JavaMLWritable, JavaMLRe
         kwargs = self._input_kwargs
         self.setParams(**kwargs)
 
-    def _create_model(self, java_model: "JavaObject") -> KMeansModel:
+    def _create_model(self, java_model: "JavaObjectRef") -> KMeansModel:
         return KMeansModel(java_model)
 
     @keyword_only
@@ -1232,7 +1233,7 @@ class BisectingKMeans(
         """
         return self._set(weightCol=value)
 
-    def _create_model(self, java_model: "JavaObject") -> BisectingKMeansModel:
+    def _create_model(self, java_model: "JavaObjectRef") -> BisectingKMeansModel:
         return BisectingKMeansModel(java_model)
 
 
@@ -1718,7 +1719,7 @@ class LDA(JavaEstimator[LDAModel], _LDAParams, JavaMLReadable["LDA"], JavaMLWrit
         kwargs = self._input_kwargs
         self.setParams(**kwargs)
 
-    def _create_model(self, java_model: "JavaObject") -> LDAModel:
+    def _create_model(self, java_model: "JavaObjectRef") -> LDAModel:
         if self.getOptimizer() == "em":
             return DistributedLDAModel(java_model)
         else:

@@ -78,7 +78,6 @@ from pyspark.sql.table_arg import TableArg
 
 
 if TYPE_CHECKING:
-    from py4j.java_gateway import JavaObject
     import pyarrow as pa
     from pyspark.core.rdd import RDD
     from pyspark.core.context import SparkContext
@@ -101,11 +100,13 @@ if TYPE_CHECKING:
     from pyspark.sql.observation import Observation
     from pyspark.sql.metrics import ExecutionInfo
 
+from pyspark.jvm_bridge import get_bridge, JavaObjectRef
+
 
 class DataFrame(ParentDataFrame, PandasMapOpsMixin, PandasConversionMixin):
     def __new__(
         cls,
-        jdf: "JavaObject",
+        jdf: JavaObjectRef,
         sql_ctx: Union["SQLContext", "SparkSession"],
     ) -> "DataFrame":
         self = object.__new__(cls)
@@ -114,7 +115,7 @@ class DataFrame(ParentDataFrame, PandasMapOpsMixin, PandasConversionMixin):
 
     def __init__(
         self,
-        jdf: "JavaObject",
+        jdf: "JavaObjectRef",
         sql_ctx: Union["SQLContext", "SparkSession"],
     ):
         from pyspark.sql.context import SQLContext
@@ -133,7 +134,7 @@ class DataFrame(ParentDataFrame, PandasMapOpsMixin, PandasConversionMixin):
         self._session: "SparkSession" = session
 
         self._sc: "SparkContext" = sql_ctx._sc
-        self._jdf: "JavaObject" = jdf
+        self._jdf: "JavaObjectRef" = jdf
         self.is_cached = False
         # Check whether _repr_html is supported or not, we use it to avoid calling _jdf twice
         # by __repr__ and _repr_html_ while eager evaluation opens.
@@ -931,16 +932,16 @@ class DataFrame(ParentDataFrame, PandasMapOpsMixin, PandasConversionMixin):
     def _jseq(
         self,
         cols: Sequence,
-        converter: Optional[Callable[..., Union["PrimitiveType", "JavaObject"]]] = None,
-    ) -> "JavaObject":
+        converter: Optional[Callable[..., Union["PrimitiveType", "JavaObjectRef"]]] = None,
+    ) -> "JavaObjectRef":
         """Return a JVM Seq of Columns from a list of Column or names"""
         return _to_seq(self.sparkSession._sc, cols, converter)
 
-    def _jmap(self, jm: Dict) -> "JavaObject":
+    def _jmap(self, jm: Dict) -> "JavaObjectRef":
         """Return a JVM Scala Map from a dict"""
         return to_scala_map(self.sparkSession._sc._jvm, jm)
 
-    def _jcols(self, *cols: "ColumnOrName") -> "JavaObject":
+    def _jcols(self, *cols: "ColumnOrName") -> "JavaObjectRef":
         """Return a JVM Seq of Columns from a list of Column or column names
 
         If `cols` has only one list in it, cols[0] will be used as the list.
@@ -949,7 +950,7 @@ class DataFrame(ParentDataFrame, PandasMapOpsMixin, PandasConversionMixin):
             cols = cols[0]
         return self._jseq(cols, _to_java_column)
 
-    def _jcols_ordinal(self, *cols: "ColumnOrNameOrOrdinal") -> "JavaObject":
+    def _jcols_ordinal(self, *cols: "ColumnOrNameOrOrdinal") -> "JavaObjectRef":
         """Return a JVM Seq of Columns from a list of Column or column names or column ordinals.
 
         If `cols` has only one list in it, cols[0] will be used as the list.
@@ -1140,7 +1141,7 @@ class DataFrame(ParentDataFrame, PandasMapOpsMixin, PandasConversionMixin):
 
         def to_jcols(
             cols: Union["ColumnOrName", List["ColumnOrName"], Tuple["ColumnOrName", ...]]
-        ) -> "JavaObject":
+        ) -> "JavaObjectRef":
             if isinstance(cols, list):
                 return self._jcols(*cols)
             if isinstance(cols, tuple):
@@ -1706,16 +1707,14 @@ class DataFrame(ParentDataFrame, PandasMapOpsMixin, PandasConversionMixin):
         )
 
     def withMetadata(self, columnName: str, metadata: Dict[str, Any]) -> ParentDataFrame:
-        from py4j.java_gateway import JVMView
-
         if not isinstance(metadata, dict):
             raise PySparkTypeError(
                 errorClass="NOT_DICT",
                 messageParameters={"arg_name": "metadata", "arg_type": type(metadata).__name__},
             )
-        sc = get_active_spark_context()
-        jmeta = cast(JVMView, sc._jvm).org.apache.spark.sql.types.Metadata.fromJson(
-            json.dumps(metadata)
+        bridge = get_bridge()
+        jmeta = bridge.call_static(
+            "org.apache.spark.sql.types.Metadata", "fromJson", json.dumps(metadata)
         )
         return DataFrame(self._jdf.withMetadata(columnName, jmeta), self.sparkSession)
 
@@ -1729,7 +1728,7 @@ class DataFrame(ParentDataFrame, PandasMapOpsMixin, PandasConversionMixin):
 
     def drop(self, *cols: "ColumnOrName") -> ParentDataFrame:  # type: ignore[misc]
         column_names: List[str] = []
-        java_columns: List["JavaObject"] = []
+        java_columns: List["JavaObjectRef"] = []
 
         for c in cols:
             if isinstance(c, str):

@@ -23,12 +23,13 @@ from pyspark.sql.utils import get_active_spark_context
 
 
 if TYPE_CHECKING:
-    from py4j.java_gateway import JavaObject
     from pyspark.sql._typing import ColumnOrName
+
+from pyspark.jvm_bridge import JavaObjectRef
 
 
 class TableArg(ParentTableArg):
-    def __init__(self, j_table_arg: "JavaObject"):
+    def __init__(self, j_table_arg: JavaObjectRef):
         self._j_table_arg = j_table_arg
 
     def partitionBy(self, *cols: "ColumnOrName") -> "TableArg":

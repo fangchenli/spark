@@ -33,8 +33,9 @@ from pyspark.mllib.util import Saveable, Loader, inherit_doc, JavaLoader, JavaSa
 from pyspark.streaming import DStream
 
 if TYPE_CHECKING:
-    from py4j.java_gateway import JavaObject
     from pyspark.mllib._typing import VectorLike
+
+from pyspark.jvm_bridge import JavaObjectRef
 
 T = TypeVar("T")
 
@@ -75,7 +76,7 @@ class BisectingKMeansModel(JavaModelWrapper):
     0.0
     """
 
-    def __init__(self, java_model: "JavaObject"):
+    def __init__(self, java_model: "JavaObjectRef"):
         super().__init__(java_model)
         self.centers = [c.toArray() for c in self.call("clusterCenters")]
 

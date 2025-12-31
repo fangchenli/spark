@@ -63,9 +63,9 @@ from pyspark.sql.dataframe import DataFrame
 
 if TYPE_CHECKING:
     from pyspark.ml._typing import ParamMap
-    from py4j.java_gateway import JavaObject
-    from py4j.java_collections import JavaArray
     from pyspark.core.context import SparkContext
+
+from pyspark.jvm_bridge import JavaObjectRef, JavaArrayRef
 
 __all__ = [
     "ParamGridBuilder",
@@ -247,7 +247,7 @@ class _ValidatorParams(HasSeed):
 
     @classmethod
     def _from_java_impl(
-        cls, java_stage: "JavaObject"
+        cls, java_stage: "JavaObjectRef"
     ) -> Tuple[Estimator, List["ParamMap"], Evaluator]:
         """
         Return Python estimator, estimatorParamMaps, and evaluator from a Java ValidatorParams.
@@ -271,7 +271,7 @@ class _ValidatorParams(HasSeed):
 
         return estimator, epms, evaluator
 
-    def _to_java_impl(self) -> Tuple["JavaObject", "JavaObject", "JavaObject"]:
+    def _to_java_impl(self) -> Tuple["JavaObjectRef", "JavaObjectRef", "JavaObjectRef"]:
         """
         Return Java estimator, estimatorParamMaps, and evaluator from this Python instance.
         """
@@ -305,7 +305,7 @@ class _ValidatorSharedReadWrite:
     @staticmethod
     def meta_estimator_transfer_param_maps_to_java(
         pyEstimator: Estimator, pyParamMaps: Sequence["ParamMap"]
-    ) -> "JavaArray":
+    ) -> "JavaArrayRef":
         from pyspark.core.context import SparkContext
 
         from pyspark.jvm_bridge import get_bridge
@@ -340,7 +340,7 @@ class _ValidatorSharedReadWrite:
 
     @staticmethod
     def meta_estimator_transfer_param_maps_from_java(
-        pyEstimator: Estimator, javaParamMaps: "JavaArray"
+        pyEstimator: Estimator, javaParamMaps: "JavaArrayRef"
     ) -> List["ParamMap"]:
         from pyspark.core.context import SparkContext
 
@@ -974,7 +974,7 @@ class CrossValidator(
         return CrossValidatorReader(cls)
 
     @classmethod
-    def _from_java(cls, java_stage: "JavaObject") -> "CrossValidator":
+    def _from_java(cls, java_stage: "JavaObjectRef") -> "CrossValidator":
         """
         Given a Java CrossValidator, create and return a Python wrapper of it.
         Used for ML persistence.
@@ -1000,13 +1000,13 @@ class CrossValidator(
         py_stage._resetUid(java_stage.uid())
         return py_stage
 
-    def _to_java(self) -> "JavaObject":
+    def _to_java(self) -> "JavaObjectRef":
         """
         Transfer this instance to a Java CrossValidator. Used for ML persistence.
 
         Returns
         -------
-        py4j.java_gateway.JavaObject
+        py4j.java_gateway.JavaObjectRef
             Java object equivalent to this instance.
         """
 
@@ -1114,7 +1114,7 @@ class CrossValidatorModel(
         return CrossValidatorModelReader(cls)
 
     @classmethod
-    def _from_java(cls, java_stage: "JavaObject") -> "CrossValidatorModel":
+    def _from_java(cls, java_stage: "JavaObjectRef") -> "CrossValidatorModel":
         """
         Given a Java CrossValidatorModel, create and return a Python wrapper of it.
         Used for ML persistence.
@@ -1149,13 +1149,13 @@ class CrossValidatorModel(
         py_stage._resetUid(java_stage.uid())
         return py_stage
 
-    def _to_java(self) -> "JavaObject":
+    def _to_java(self) -> "JavaObjectRef":
         """
         Transfer this instance to a Java CrossValidatorModel. Used for ML persistence.
 
         Returns
         -------
-        py4j.java_gateway.JavaObject
+        py4j.java_gateway.JavaObjectRef
             Java object equivalent to this instance.
         """
         from pyspark.core.context import SparkContext
@@ -1553,7 +1553,7 @@ class TrainValidationSplit(
         return TrainValidationSplitReader(cls)
 
     @classmethod
-    def _from_java(cls, java_stage: "JavaObject") -> "TrainValidationSplit":
+    def _from_java(cls, java_stage: "JavaObjectRef") -> "TrainValidationSplit":
         """
         Given a Java TrainValidationSplit, create and return a Python wrapper of it.
         Used for ML persistence.
@@ -1577,13 +1577,13 @@ class TrainValidationSplit(
         py_stage._resetUid(java_stage.uid())
         return py_stage
 
-    def _to_java(self) -> "JavaObject":
+    def _to_java(self) -> "JavaObjectRef":
         """
         Transfer this instance to a Java TrainValidationSplit. Used for ML persistence.
 
         Returns
         -------
-        py4j.java_gateway.JavaObject
+        py4j.java_gateway.JavaObjectRef
             Java object equivalent to this instance.
         """
 
@@ -1675,7 +1675,7 @@ class TrainValidationSplitModel(
         return TrainValidationSplitModelReader(cls)
 
     @classmethod
-    def _from_java(cls, java_stage: "JavaObject") -> "TrainValidationSplitModel":
+    def _from_java(cls, java_stage: "JavaObjectRef") -> "TrainValidationSplitModel":
         """
         Given a Java TrainValidationSplitModel, create and return a Python wrapper of it.
         Used for ML persistence.
@@ -1709,13 +1709,13 @@ class TrainValidationSplitModel(
         py_stage._resetUid(java_stage.uid())
         return py_stage
 
-    def _to_java(self) -> "JavaObject":
+    def _to_java(self) -> "JavaObjectRef":
         """
         Transfer this instance to a Java TrainValidationSplitModel. Used for ML persistence.
 
         Returns
         -------
-        py4j.java_gateway.JavaObject
+        py4j.java_gateway.JavaObjectRef
             Java object equivalent to this instance.
         """
         from pyspark.core.context import SparkContext

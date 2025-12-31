@@ -45,7 +45,6 @@ from pyspark.sql.types import AtomicType, DataType, StructType
 from pyspark.sql.streaming import StreamingQueryManager
 
 if TYPE_CHECKING:
-    from py4j.java_gateway import JavaObject
     import pyarrow as pa
     from pyspark.core.rdd import RDD
     from pyspark.core.context import SparkContext
@@ -55,6 +54,8 @@ if TYPE_CHECKING:
         UserDefinedFunctionLike,
     )
     from pyspark.sql.pandas._typing import DataFrameLike as PandasDataFrameLike
+
+from pyspark.jvm_bridge import JavaObjectRef
 
 __all__ = ["SQLContext", "HiveContext"]
 
@@ -106,7 +107,7 @@ class SQLContext:
         self,
         sparkContext: "SparkContext",
         sparkSession: Optional[SparkSession] = None,
-        jsqlContext: Optional["JavaObject"] = None,
+        jsqlContext: Optional["JavaObjectRef"] = None,
     ):
         if sparkSession is None:
             warnings.warn(
@@ -132,7 +133,7 @@ class SQLContext:
             SQLContext._instantiatedContext = self
 
     @property
-    def _ssql_ctx(self) -> "JavaObject":
+    def _ssql_ctx(self) -> "JavaObjectRef":
         """Accessor for the JVM Spark SQL context.
 
         Subclasses can override this property to provide their own
@@ -726,7 +727,7 @@ class HiveContext(SQLContext):
         self,
         sparkContext: "SparkContext",
         sparkSession: Optional[SparkSession] = None,
-        jhiveContext: Optional["JavaObject"] = None,
+        jhiveContext: Optional["JavaObjectRef"] = None,
     ):
         warnings.warn(
             "HiveContext is deprecated in Spark 2.0.0. Please use "

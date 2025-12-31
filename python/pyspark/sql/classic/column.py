@@ -38,31 +38,28 @@ from pyspark.sql.types import DataType
 from pyspark.sql.utils import get_active_spark_context, enum_to_value
 
 if TYPE_CHECKING:
-    from py4j.java_gateway import JavaObject
     from pyspark.core.context import SparkContext
     from pyspark.sql._typing import ColumnOrName, LiteralType, DecimalLiteral, DateTimeLiteral
     from pyspark.sql.window import WindowSpec
+
+from pyspark.jvm_bridge import get_bridge, JavaObjectRef
 
 __all__ = ["Column"]
 
 
 def _create_column_from_literal(
     literal: Union["LiteralType", "DecimalLiteral", "DateTimeLiteral", "ParentColumn"]
-) -> "JavaObject":
-    from py4j.java_gateway import JVMView
-
-    sc = get_active_spark_context()
-    return cast(JVMView, sc._jvm).functions.lit(enum_to_value(literal))
+) -> JavaObjectRef:
+    bridge = get_bridge()
+    return bridge.call_static("org.apache.spark.sql.functions", "lit", enum_to_value(literal))
 
 
-def _create_column_from_name(name: str) -> "JavaObject":
-    from py4j.java_gateway import JVMView
-
-    sc = get_active_spark_context()
-    return cast(JVMView, sc._jvm).functions.col(name)
+def _create_column_from_name(name: str) -> JavaObjectRef:
+    bridge = get_bridge()
+    return bridge.call_static("org.apache.spark.sql.functions", "col", name)
 
 
-def _to_java_column(col: "ColumnOrName") -> "JavaObject":
+def _to_java_column(col: "ColumnOrName") -> "JavaObjectRef":
     if isinstance(col, Column):
         jcol = col._jc
     elif isinstance(col, str):
@@ -76,7 +73,7 @@ def _to_java_column(col: "ColumnOrName") -> "JavaObject":
 
 
 @overload
-def _to_seq(sc: "SparkContext", cols: Iterable["JavaObject"]) -> "JavaObject":
+def _to_seq(sc: "SparkContext", cols: Iterable["JavaObjectRef"]) -> "JavaObjectRef":
     ...
 
 
@@ -84,16 +81,16 @@ def _to_seq(sc: "SparkContext", cols: Iterable["JavaObject"]) -> "JavaObject":
 def _to_seq(
     sc: "SparkContext",
     cols: Iterable["ColumnOrName"],
-    converter: Optional[Callable[["ColumnOrName"], "JavaObject"]],
-) -> "JavaObject":
+    converter: Optional[Callable[["ColumnOrName"], "JavaObjectRef"]],
+) -> "JavaObjectRef":
     ...
 
 
 def _to_seq(
     sc: "SparkContext",
-    cols: Union[Iterable["ColumnOrName"], Iterable["JavaObject"]],
-    converter: Optional[Callable[["ColumnOrName"], "JavaObject"]] = None,
-) -> "JavaObject":
+    cols: Union[Iterable["ColumnOrName"], Iterable["JavaObjectRef"]],
+    converter: Optional[Callable[["ColumnOrName"], "JavaObjectRef"]] = None,
+) -> "JavaObjectRef":
     """
     Convert a list of Columns (or names) into a JVM Seq of Column.
 
@@ -110,8 +107,8 @@ def _to_seq(
 def _to_list(
     sc: "SparkContext",
     cols: List["ColumnOrName"],
-    converter: Optional[Callable[["ColumnOrName"], "JavaObject"]] = None,
-) -> "JavaObject":
+    converter: Optional[Callable[["ColumnOrName"], "JavaObjectRef"]] = None,
+) -> "JavaObjectRef":
     """
     Convert a list of Columns (or names) into a JVM (Scala) List of Columns.
 
@@ -133,10 +130,10 @@ def _unary_op(name: str, self: ParentColumn) -> ParentColumn:
 
 
 def _func_op(name: str, self: ParentColumn) -> ParentColumn:
-    from py4j.java_gateway import JVMView
+    from pyspark.jvm_bridge import get_bridge
 
-    sc = get_active_spark_context()
-    jc = getattr(cast(JVMView, sc._jvm).functions, name)(self._jc)
+    bridge = get_bridge()
+    jc = bridge.call_static("org.apache.spark.sql.functions", name, self._jc)
     return Column(jc)
 
 
@@ -146,12 +143,14 @@ def _bin_func_op(
     other: Union[ParentColumn, "LiteralType", "DecimalLiteral", "DateTimeLiteral"],
     reverse: bool = False,
 ) -> ParentColumn:
-    from py4j.java_gateway import JVMView
+    from pyspark.jvm_bridge import get_bridge
 
-    sc = get_active_spark_context()
-    fn = getattr(cast(JVMView, sc._jvm).functions, name)
+    bridge = get_bridge()
     jc = other._jc if isinstance(other, ParentColumn) else _create_column_from_literal(other)
-    njc = fn(self._jc, jc) if not reverse else fn(jc, self._jc)
+    if not reverse:
+        njc = bridge.call_static("org.apache.spark.sql.functions", name, self._jc, jc)
+    else:
+        njc = bridge.call_static("org.apache.spark.sql.functions", name, jc, self._jc)
     return Column(njc)
 
 
@@ -185,7 +184,7 @@ class Column(ParentColumn):
     def __getnewargs__(self) -> Tuple[Any, ...]:
         return (self._jc,)
 
-    def __init__(self, jc: "JavaObject") -> None:
+    def __init__(self, jc: "JavaObjectRef") -> None:
         self._jc = jc
 
     # arithmetic operators
@@ -522,15 +521,17 @@ class Column(ParentColumn):
         return _unary_op("isNaN", self)
 
     def alias(self, *alias: str, **kwargs: Any) -> ParentColumn:
+        from pyspark.jvm_bridge import get_bridge
+
         metadata = kwargs.pop("metadata", None)
         assert not kwargs, "Unexpected kwargs where passed: %s" % kwargs
 
         sc = get_active_spark_context()
+        bridge = get_bridge()
         if len(alias) == 1:
             if metadata is not None:
-                assert sc._jvm is not None
-                jmeta = getattr(sc._jvm, "org.apache.spark.sql.types.Metadata").fromJson(
-                    json.dumps(metadata)
+                jmeta = bridge.call_static(
+                    "org.apache.spark.sql.types.Metadata", "fromJson", json.dumps(metadata)
                 )
                 return Column(getattr(self._jc, "as")(alias[0], jmeta))
             else:

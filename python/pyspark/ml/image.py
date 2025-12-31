@@ -56,11 +56,10 @@ class _ImageSchema:
 
         .. versionadded:: 2.3.0
         """
-        from pyspark.core.context import SparkContext
+        from pyspark.jvm_bridge import get_bridge
 
-        ctx = SparkContext._active_spark_context
-        assert ctx is not None and ctx._jvm is not None
-        jschema = getattr(ctx._jvm, "org.apache.spark.ml.image.ImageSchema").imageSchema()
+        bridge = get_bridge()
+        jschema = bridge.call_static("org.apache.spark.ml.image.ImageSchema", "imageSchema")
         return cast(StructType, _parse_datatype_json_string(jschema.json()))
 
     @cached_property
@@ -75,11 +74,10 @@ class _ImageSchema:
 
         .. versionadded:: 2.3.0
         """
-        from pyspark.core.context import SparkContext
+        from pyspark.jvm_bridge import get_bridge
 
-        ctx = SparkContext._active_spark_context
-        assert ctx is not None and ctx._jvm is not None
-        return dict(getattr(ctx._jvm, "org.apache.spark.ml.image.ImageSchema").javaOcvTypes())
+        bridge = get_bridge()
+        return dict(bridge.call_static("org.apache.spark.ml.image.ImageSchema", "javaOcvTypes"))
 
     @cached_property
     def columnSchema(self) -> StructType:
@@ -94,11 +92,10 @@ class _ImageSchema:
 
         .. versionadded:: 2.4.0
         """
-        from pyspark.core.context import SparkContext
+        from pyspark.jvm_bridge import get_bridge
 
-        ctx = SparkContext._active_spark_context
-        assert ctx is not None and ctx._jvm is not None
-        jschema = getattr(ctx._jvm, "org.apache.spark.ml.image.ImageSchema").columnSchema()
+        bridge = get_bridge()
+        jschema = bridge.call_static("org.apache.spark.ml.image.ImageSchema", "columnSchema")
         return cast(StructType, _parse_datatype_json_string(jschema.json()))
 
     @cached_property
@@ -113,11 +110,10 @@ class _ImageSchema:
 
         .. versionadded:: 2.3.0
         """
-        from pyspark.core.context import SparkContext
+        from pyspark.jvm_bridge import get_bridge
 
-        ctx = SparkContext._active_spark_context
-        assert ctx is not None and ctx._jvm is not None
-        return list(getattr(ctx._jvm, "org.apache.spark.ml.image.ImageSchema").imageFields())
+        bridge = get_bridge()
+        return list(bridge.call_static("org.apache.spark.ml.image.ImageSchema", "imageFields"))
 
     @cached_property
     def undefinedImageType(self) -> str:
@@ -126,11 +122,10 @@ class _ImageSchema:
 
         .. versionadded:: 2.3.0
         """
-        from pyspark.core.context import SparkContext
+        from pyspark.jvm_bridge import get_bridge
 
-        ctx = SparkContext._active_spark_context
-        assert ctx is not None and ctx._jvm is not None
-        return getattr(ctx._jvm, "org.apache.spark.ml.image.ImageSchema").undefinedImageType()
+        bridge = get_bridge()
+        return bridge.call_static("org.apache.spark.ml.image.ImageSchema", "undefinedImageType")
 
     def toNDArray(self, image: Row) -> np.ndarray:
         """

@@ -29,8 +29,7 @@ from pyspark.ml.util import (
 from pyspark.ml.wrapper import JavaEstimator, JavaModel, JavaParams
 from pyspark.ml.param.shared import HasPredictionCol, Param, TypeConverters, Params
 
-if TYPE_CHECKING:
-    from py4j.java_gateway import JavaObject
+from pyspark.jvm_bridge import JavaObjectRef
 
 __all__ = ["FPGrowth", "FPGrowthModel", "PrefixSpan"]
 
@@ -309,7 +308,7 @@ class FPGrowth(
         """
         return self._set(predictionCol=value)
 
-    def _create_model(self, java_model: "JavaObject") -> FPGrowthModel:
+    def _create_model(self, java_model: "JavaObjectRef") -> FPGrowthModel:
         return FPGrowthModel(java_model)
 
 

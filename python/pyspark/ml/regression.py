@@ -74,8 +74,7 @@ from pyspark.ml.common import inherit_doc
 from pyspark.sql import DataFrame
 from pyspark.sql.utils import is_remote
 
-if TYPE_CHECKING:
-    from py4j.java_gateway import JavaObject
+from pyspark.jvm_bridge import JavaObjectRef
 
 T = TypeVar("T")
 M = TypeVar("M", bound=Transformer)
@@ -363,7 +362,7 @@ class LinearRegression(
         kwargs = self._input_kwargs
         return self._set(**kwargs)
 
-    def _create_model(self, java_model: "JavaObject") -> "LinearRegressionModel":
+    def _create_model(self, java_model: "JavaObjectRef") -> "LinearRegressionModel":
         return LinearRegressionModel(java_model)
 
     @since("2.3.0")
@@ -899,7 +898,7 @@ class IsotonicRegression(
         kwargs = self._input_kwargs
         return self._set(**kwargs)
 
-    def _create_model(self, java_model: "JavaObject") -> "IsotonicRegressionModel":
+    def _create_model(self, java_model: "JavaObjectRef") -> "IsotonicRegressionModel":
         return IsotonicRegressionModel(java_model)
 
     def setIsotonic(self, value: bool) -> "IsotonicRegression":
@@ -1176,7 +1175,7 @@ class DecisionTreeRegressor(
         kwargs = self._input_kwargs
         return self._set(**kwargs)
 
-    def _create_model(self, java_model: "JavaObject") -> "DecisionTreeRegressionModel":
+    def _create_model(self, java_model: "JavaObjectRef") -> "DecisionTreeRegressionModel":
         return DecisionTreeRegressionModel(java_model)
 
     @since("1.4.0")
@@ -1484,7 +1483,7 @@ class RandomForestRegressor(
         kwargs = self._input_kwargs
         return self._set(**kwargs)
 
-    def _create_model(self, java_model: "JavaObject") -> "RandomForestRegressionModel":
+    def _create_model(self, java_model: "JavaObjectRef") -> "RandomForestRegressionModel":
         return RandomForestRegressionModel(java_model)
 
     def setMaxDepth(self, value: int) -> "RandomForestRegressor":
@@ -1840,7 +1839,7 @@ class GBTRegressor(
         kwargs = self._input_kwargs
         return self._set(**kwargs)
 
-    def _create_model(self, java_model: "JavaObject") -> "GBTRegressionModel":
+    def _create_model(self, java_model: "JavaObjectRef") -> "GBTRegressionModel":
         return GBTRegressionModel(java_model)
 
     @since("1.4.0")
@@ -2234,7 +2233,7 @@ class AFTSurvivalRegression(
         kwargs = self._input_kwargs
         return self._set(**kwargs)
 
-    def _create_model(self, java_model: "JavaObject") -> "AFTSurvivalRegressionModel":
+    def _create_model(self, java_model: "JavaObjectRef") -> "AFTSurvivalRegressionModel":
         return AFTSurvivalRegressionModel(java_model)
 
     @since("1.6.0")
@@ -2631,7 +2630,7 @@ class GeneralizedLinearRegression(
         kwargs = self._input_kwargs
         return self._set(**kwargs)
 
-    def _create_model(self, java_model: "JavaObject") -> "GeneralizedLinearRegressionModel":
+    def _create_model(self, java_model: "JavaObjectRef") -> "GeneralizedLinearRegressionModel":
         return GeneralizedLinearRegressionModel(java_model)
 
     @since("2.0.0")
@@ -3194,7 +3193,7 @@ class FMRegressor(
         kwargs = self._input_kwargs
         return self._set(**kwargs)
 
-    def _create_model(self, java_model: "JavaObject") -> "FMRegressionModel":
+    def _create_model(self, java_model: "JavaObjectRef") -> "FMRegressionModel":
         return FMRegressionModel(java_model)
 
     @since("3.0.0")

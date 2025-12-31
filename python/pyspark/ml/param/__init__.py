@@ -516,12 +516,11 @@ class Params(Identifiable, metaclass=ABCMeta):
         """
         Sets default params.
         """
-        if not is_remote_only():
-            from py4j.java_gateway import JavaObject
+        from pyspark.jvm_bridge import is_java_object
 
         for param, value in kwargs.items():
             p = getattr(self, param)
-            if value is not None and (is_remote_only() or not isinstance(value, JavaObject)):
+            if value is not None and (is_remote_only() or not is_java_object(value)):
                 try:
                     value = p.typeConverter(value)
                 except TypeError as e:

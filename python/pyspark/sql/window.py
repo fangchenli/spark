@@ -27,8 +27,9 @@ from pyspark.util import (
 )
 
 if TYPE_CHECKING:
-    from py4j.java_gateway import JavaObject
     from pyspark.sql._typing import ColumnOrName
+
+from pyspark.jvm_bridge import JavaObjectRef
 
 __all__ = ["Window", "WindowSpec"]
 
@@ -339,7 +340,7 @@ class WindowSpec:
         Supports Spark Connect.
     """
 
-    def __new__(cls, jspec: "JavaObject") -> "WindowSpec":
+    def __new__(cls, jspec: "JavaObjectRef") -> "WindowSpec":
         from pyspark.sql.classic.WindowSpec import WindowSpec  # type: ignore[import-not-found]
 
         return WindowSpec.__new__(WindowSpec, jspec)

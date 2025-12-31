@@ -143,9 +143,10 @@ class SparkFiles:
             return cast(str, cls._root_directory)
         else:
             # This will have to change if we support multiple SparkContexts:
-            assert cls._sc is not None
-            assert cls._sc._jvm is not None
-            return getattr(cls._sc._jvm, "org.apache.spark.SparkFiles").getRootDirectory()
+            from pyspark.jvm_bridge import get_bridge
+
+            bridge = get_bridge()
+            return bridge.call_static("org.apache.spark.SparkFiles", "getRootDirectory")
 
 
 def _test() -> None:

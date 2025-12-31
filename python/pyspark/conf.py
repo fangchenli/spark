@@ -18,13 +18,11 @@
 __all__ = ["SparkConf"]
 
 import sys
-from typing import Dict, List, Optional, Tuple, cast, overload, TYPE_CHECKING
+from typing import Any, Dict, List, Optional, Tuple, cast, overload, TYPE_CHECKING
 
+from pyspark.jvm_bridge import JavaObjectRef
 from pyspark.util import is_remote_only
 from pyspark.errors import PySparkRuntimeError
-
-if TYPE_CHECKING:
-    from py4j.java_gateway import JVMView, JavaObject
 
 
 class SparkConf:
@@ -110,14 +108,14 @@ class SparkConf:
     spark.home=/path
     """
 
-    _jconf: Optional["JavaObject"]
+    _jconf: Optional[JavaObjectRef]
     _conf: Optional[Dict[str, str]]
 
     def __init__(
         self,
         loadDefaults: bool = True,
-        _jvm: Optional["JVMView"] = None,  # Deprecated, will be removed in future
-        _jconf: Optional["JavaObject"] = None,
+        _jvm: Optional[Any] = None,  # Deprecated, will be removed in future
+        _jconf: Optional[JavaObjectRef] = None,
     ):
         """
         Create a new Spark configuration.
@@ -245,9 +243,7 @@ class SparkConf:
     def getAll(self) -> List[Tuple[str, str]]:
         """Get all values as a list of key-value pairs."""
         if self._jconf is not None:
-            from py4j.java_gateway import JavaObject
-
-            return [(elem._1(), elem._2()) for elem in cast(JavaObject, self._jconf).getAll()]
+            return [(elem._1(), elem._2()) for elem in cast(JavaObjectRef, self._jconf).getAll()]
         else:
             assert self._conf is not None
             return list(self._conf.items())

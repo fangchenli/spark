@@ -69,7 +69,7 @@ from pyspark.join import (
     python_full_outer_join,
     python_cogroup,
 )
-from pyspark.jvm_bridge import get_bridge
+from pyspark.jvm_bridge import get_bridge, JavaObjectRef
 from pyspark.statcounter import StatCounter
 from pyspark.rddsampler import RDDSampler, RDDRangeSampler, RDDStratifiedSampler
 from pyspark.storagelevel import StorageLevel
@@ -97,8 +97,6 @@ from pyspark.util import PythonEvalType  # noqa: F401
 
 
 if TYPE_CHECKING:
-    from py4j.java_gateway import JavaObject
-
     from pyspark._typing import S, NumberOrArray
     from pyspark.core.context import SparkContext
     from pyspark.sql.dataframe import DataFrame
@@ -206,7 +204,7 @@ class RDD(Generic[T_co]):
 
     def __init__(
         self,
-        jrdd: "JavaObject",
+        jrdd: "JavaObjectRef",
         ctx: "SparkContext",
         jrdd_deserializer: Serializer = AutoBatchedSerializer(CPickleSerializer()),
     ):
@@ -4817,7 +4815,7 @@ class RDD(Generic[T_co]):
 
         return values.collect()
 
-    def _to_java_object_rdd(self) -> "JavaObject":
+    def _to_java_object_rdd(self) -> "JavaObjectRef":
         """Return a JavaRDD of Object by unpickling
 
         It will convert each Python object into Java object by Pickle, whenever the
@@ -5107,14 +5105,15 @@ class RDD(Generic[T_co]):
         if profile._java_resource_profile is not None:
             jrp = profile._java_resource_profile
         else:
-            assert self.ctx._jvm is not None
+            from pyspark.jvm_bridge import get_bridge
 
-            builder = getattr(self.ctx._jvm, "org.apache.spark.resource.ResourceProfileBuilder")()
+            bridge = get_bridge()
+            builder = bridge.new("org.apache.spark.resource.ResourceProfileBuilder")
             ereqs = ExecutorResourceRequests(self.ctx._jvm, profile._executor_resource_requests)
             treqs = TaskResourceRequests(self.ctx._jvm, profile._task_resource_requests)
-            builder.require(ereqs._java_executor_resource_requests)
-            builder.require(treqs._java_task_resource_requests)
-            jrp = builder.build()
+            bridge.call(builder, "require", ereqs._java_executor_resource_requests)
+            bridge.call(builder, "require", treqs._java_task_resource_requests)
+            jrp = bridge.call(builder, "build")
 
         self._jrdd.withResources(jrp)
         return self
@@ -5196,7 +5195,7 @@ def _prepare_for_python_RDD(sc: "SparkContext", command: Any) -> Tuple[bytes, An
 
 def _wrap_function(
     sc: "SparkContext", func: Callable, deserializer: Any, serializer: Any, profiler: Any = None
-) -> "JavaObject":
+) -> "JavaObjectRef":
     assert deserializer, "deserializer should not be empty"
     assert serializer, "serializer should not be empty"
     command = (func, profiler, deserializer, serializer)
@@ -5379,7 +5378,7 @@ class PipelinedRDD(RDD[U], Generic[T, U]):
         self.is_checkpointed = False
         self.ctx = prev.ctx
         self.prev = prev
-        self._jrdd_val: Optional["JavaObject"] = None
+        self._jrdd_val: Optional["JavaObjectRef"] = None
         self._id = None
         self._jrdd_deserializer = self.ctx.serializer
         self._bypass_serializer = False
@@ -5390,7 +5389,7 @@ class PipelinedRDD(RDD[U], Generic[T, U]):
         return self._prev_jrdd.partitions().size()
 
     @property
-    def _jrdd(self) -> "JavaObject":
+    def _jrdd(self) -> "JavaObjectRef":
         if self._jrdd_val:
             return self._jrdd_val
         if self._bypass_serializer:

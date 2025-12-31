@@ -37,7 +37,8 @@ from pyspark.ml.common import inherit_doc, _java2py, _py2java
 
 if TYPE_CHECKING:
     from pyspark.ml._typing import ParamMap
-    from py4j.java_gateway import JavaObject, JavaClass
+
+from pyspark.jvm_bridge import JavaObjectRef
 
 
 T = TypeVar("T")
@@ -51,7 +52,7 @@ class JavaWrapper:
     Wrapper class for a Java companion object
     """
 
-    def __init__(self, java_obj: Optional["JavaObject"] = None):
+    def __init__(self, java_obj: Optional["JavaObjectRef"] = None):
         super().__init__()
         self._java_obj = java_obj
 
@@ -89,7 +90,7 @@ class JavaWrapper:
 
     @staticmethod
     @try_remote_return_java_class
-    def _new_java_obj(java_class: str, *args: Any) -> "JavaObject":
+    def _new_java_obj(java_class: str, *args: Any) -> "JavaObjectRef":
         """
         Returns a new Java object.
         """
@@ -104,7 +105,7 @@ class JavaWrapper:
         return bridge.new(java_class, *java_args)
 
     @staticmethod
-    def _new_java_array(pylist: List[Any], java_class: str) -> "JavaObject":
+    def _new_java_array(pylist: List[Any], java_class: str) -> "JavaObjectRef":
         """
         Create a Java array of given java_class type. Useful for
         calling a method with a Scala Array from Python with Py4J.
@@ -167,7 +168,7 @@ class JavaParams(JavaWrapper, Params, metaclass=ABCMeta):
     #: The param values in the Java object should be
     #: synced with the Python wrapper in fit/transform/evaluate/copy.
 
-    def _make_java_param_pair(self, param: Param[T], value: T) -> "JavaObject":
+    def _make_java_param_pair(self, param: Param[T], value: T) -> "JavaObjectRef":
         """
         Makes a Java param pair.
         """
@@ -205,7 +206,7 @@ class JavaParams(JavaWrapper, Params, metaclass=ABCMeta):
             )
             self._java_obj.setDefault(pair_defaults_seq)
 
-    def _transfer_param_map_to_java(self, pyParamMap: "ParamMap") -> "JavaObject":
+    def _transfer_param_map_to_java(self, pyParamMap: "ParamMap") -> "JavaObjectRef":
         """
         Transforms a Python ParamMap into a Java ParamMap.
         """
@@ -258,7 +259,7 @@ class JavaParams(JavaWrapper, Params, metaclass=ABCMeta):
                     value = _java2py(sc, self._java_obj.getDefault(java_param)).get()
                     self._setDefault(**{param.name: value})
 
-    def _transfer_param_map_from_java(self, javaParamMap: "JavaObject") -> "ParamMap":
+    def _transfer_param_map_from_java(self, javaParamMap: "JavaObjectRef") -> "ParamMap":
         """
         Transforms a Java ParamMap into a Python ParamMap.
         """
@@ -275,13 +276,13 @@ class JavaParams(JavaWrapper, Params, metaclass=ABCMeta):
         return paramMap
 
     @staticmethod
-    def _empty_java_param_map() -> "JavaObject":
+    def _empty_java_param_map() -> "JavaObjectRef":
         """
         Returns an empty Java ParamMap reference.
         """
         return _jvm().org.apache.spark.ml.param.ParamMap()
 
-    def _to_java(self) -> "JavaObject":
+    def _to_java(self) -> "JavaObjectRef":
         """
         Transfer this instance's Params to the wrapped Java object, and return the Java object.
         Used for ML persistence.
@@ -290,14 +291,14 @@ class JavaParams(JavaWrapper, Params, metaclass=ABCMeta):
 
         Returns
         -------
-        py4j.java_gateway.JavaObject
+        py4j.java_gateway.JavaObjectRef
             Java object equivalent to this instance.
         """
         self._transfer_params_to_java()
         return self._java_obj
 
     @staticmethod
-    def _from_java(java_stage: "JavaObject") -> "JP":  # type: ignore
+    def _from_java(java_stage: "JavaObjectRef") -> "JP":  # type: ignore
         """
         Given a Java object, create and return a Python wrapper of it.
         Used for ML persistence.
@@ -388,13 +389,13 @@ class JavaEstimator(JavaParams, Estimator[JM], metaclass=ABCMeta):
     """
 
     @abstractmethod
-    def _create_model(self, java_model: "JavaObject") -> JM:
+    def _create_model(self, java_model: "JavaObjectRef") -> JM:
         """
         Creates a model from the input Java model reference.
         """
         raise NotImplementedError()
 
-    def _fit_java(self, dataset: DataFrame) -> "JavaObject":
+    def _fit_java(self, dataset: DataFrame) -> "JavaObjectRef":
         """
         Fits a Java model to the input dataset.
 
@@ -405,7 +406,7 @@ class JavaEstimator(JavaParams, Estimator[JM], metaclass=ABCMeta):
 
         Returns
         -------
-        py4j.java_gateway.JavaObject
+        py4j.java_gateway.JavaObjectRef
             fitted Java model
         """
         assert self._java_obj is not None
@@ -444,7 +445,7 @@ class JavaModel(JavaTransformer, Model, metaclass=ABCMeta):
     param mix-ins, because this sets the UID from the Java model.
     """
 
-    def __init__(self, java_model: Optional["JavaObject"] = None):
+    def __init__(self, java_model: Optional["JavaObjectRef"] = None):
         """
         Initialize this instance with a Java model object.
         Subclasses should call this constructor, initialize params,

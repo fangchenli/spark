@@ -40,8 +40,9 @@ from pyspark.sql.dataframe import DataFrame
 
 if TYPE_CHECKING:
     from pyspark.ml._typing import ParamMap, PipelineStage
-    from py4j.java_gateway import JavaObject
     from pyspark.core.context import SparkContext
+
+from pyspark.jvm_bridge import JavaObjectRef
 
 
 @inherit_doc
@@ -180,7 +181,7 @@ class Pipeline(Estimator["PipelineModel"], MLReadable["Pipeline"], MLWritable):
         return PipelineReader(cls)
 
     @classmethod
-    def _from_java(cls, java_stage: "JavaObject") -> "Pipeline":
+    def _from_java(cls, java_stage: "JavaObjectRef") -> "Pipeline":
         """
         Given a Java Pipeline, create and return a Python wrapper of it.
         Used for ML persistence.
@@ -195,13 +196,13 @@ class Pipeline(Estimator["PipelineModel"], MLReadable["Pipeline"], MLWritable):
         py_stage._resetUid(java_stage.uid())
         return py_stage
 
-    def _to_java(self) -> "JavaObject":
+    def _to_java(self) -> "JavaObjectRef":
         """
         Transfer this instance to a Java Pipeline.  Used for ML persistence.
 
         Returns
         -------
-        py4j.java_gateway.JavaObject
+        py4j.java_gateway.JavaObjectRef
             Java object equivalent to this instance.
         """
         from pyspark.core.context import SparkContext
@@ -338,7 +339,7 @@ class PipelineModel(Model, MLReadable["PipelineModel"], MLWritable):
         return PipelineModelReader(cls)
 
     @classmethod
-    def _from_java(cls, java_stage: "JavaObject") -> "PipelineModel":
+    def _from_java(cls, java_stage: "JavaObjectRef") -> "PipelineModel":
         """
         Given a Java PipelineModel, create and return a Python wrapper of it.
         Used for ML persistence.
@@ -350,7 +351,7 @@ class PipelineModel(Model, MLReadable["PipelineModel"], MLWritable):
         py_stage._resetUid(java_stage.uid())
         return py_stage
 
-    def _to_java(self) -> "JavaObject":
+    def _to_java(self) -> "JavaObjectRef":
         """
         Transfer this instance to a Java PipelineModel.  Used for ML persistence.
 

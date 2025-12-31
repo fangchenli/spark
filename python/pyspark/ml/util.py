@@ -47,7 +47,6 @@ from pyspark.storagelevel import StorageLevel
 from pyspark.util import VersionUtils
 
 if TYPE_CHECKING:
-    from py4j.java_gateway import JavaGateway, JavaObject
     from pyspark.ml._typing import PipelineStage
     from pyspark.ml.base import Params
     from pyspark.core.context import SparkContext
@@ -55,6 +54,8 @@ if TYPE_CHECKING:
     from pyspark.sql.connect.dataframe import DataFrame as ConnectDataFrame
     from pyspark.ml.wrapper import JavaWrapper, JavaEstimator
     from pyspark.ml.evaluation import JavaEvaluator
+
+from pyspark.jvm_bridge import JavaObjectRef
 
 T = TypeVar("T")
 RW = TypeVar("RW", bound="BaseReadWrite")
@@ -627,7 +628,7 @@ class JavaMLWriter(MLWriter):
     (Private) Specialization of :py:class:`MLWriter` for :py:class:`JavaParams` types
     """
 
-    _jwrite: "JavaObject"
+    _jwrite: "JavaObjectRef"
 
     def __init__(self, instance: "JavaMLWritable"):
         super().__init__()
@@ -771,7 +772,7 @@ class JavaMLReader(MLReader[RL]):
         return java_package + "." + clazz.__name__
 
     @classmethod
-    def _load_java_obj(cls, clazz: Type["JavaMLReadable[RL]"]) -> "JavaObject":
+    def _load_java_obj(cls, clazz: Type["JavaMLReadable[RL]"]) -> "JavaObjectRef":
         """Load the peer Java object of the ML instance."""
         java_class = cls._java_loader_class(clazz)
         java_obj = _jvm()

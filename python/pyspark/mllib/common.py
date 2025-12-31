@@ -106,34 +106,39 @@ def _py2java(sc: SparkContext, obj: Any) -> JavaObjectRef:
 def _java2py(sc: SparkContext, r: "JavaObjectOrPickleDump", encoding: str = "bytes") -> Any:
     from pyspark.jvm_bridge import get_bridge
 
-    if is_java_object(r):
-        clsName = r.getClass().getSimpleName()
-        # convert RDD into JavaRDD
-        if clsName != "JavaRDD" and clsName.endswith("RDD"):
-            r = r.toJavaRDD()
-            clsName = "JavaRDD"
+    # If r is not a Java object (e.g., primitive int, float, bool, str), return as-is
+    if not is_java_object(r):
+        if isinstance(r, (bytearray, bytes)):
+            return CPickleSerializer().loads(bytes(r), encoding=encoding)
+        return r
 
-        bridge = get_bridge()
+    clsName = r.getClass().getSimpleName()
+    # convert RDD into JavaRDD
+    if clsName != "JavaRDD" and clsName.endswith("RDD"):
+        r = r.toJavaRDD()
+        clsName = "JavaRDD"
 
-        if clsName == "JavaRDD":
-            jrdd = bridge.call_static(
-                "org.apache.spark.mllib.api.python.SerDe", "javaToPython", r
-            )
-            return RDD(jrdd, sc)
+    bridge = get_bridge()
 
-        if clsName == "Dataset":
-            return DataFrame(r, SparkSession._getActiveSessionOrCreate())
+    if clsName == "JavaRDD":
+        jrdd = bridge.call_static(
+            "org.apache.spark.mllib.api.python.SerDe", "javaToPython", r
+        )
+        return RDD(jrdd, sc)
 
-        if clsName in _picklable_classes:
+    if clsName == "Dataset":
+        return DataFrame(r, SparkSession._getActiveSessionOrCreate())
+
+    if clsName in _picklable_classes:
+        r = bridge.call_static("org.apache.spark.mllib.api.python.SerDe", "dumps", r)
+    elif is_java_array(r) or is_java_list(r):
+        try:
             r = bridge.call_static("org.apache.spark.mllib.api.python.SerDe", "dumps", r)
-        elif is_java_array(r) or is_java_list(r):
-            try:
-                r = bridge.call_static("org.apache.spark.mllib.api.python.SerDe", "dumps", r)
-            except Exception as e:
-                if is_java_exception(e):
-                    pass  # not pickable
-                else:
-                    raise
+        except Exception as e:
+            if is_java_exception(e):
+                pass  # not pickable
+            else:
+                raise
 
     if isinstance(r, (bytearray, bytes)):
         r = CPickleSerializer().loads(bytes(r), encoding=encoding)
@@ -155,8 +160,9 @@ def callMLlibFunc(name: str, *args: Any) -> Any:
     sc = SparkContext.getOrCreate()
     bridge = get_bridge()
     python_mllib_api = bridge.new("org.apache.spark.mllib.api.python.PythonMLLibAPI")
-    api = getattr(python_mllib_api, name)
-    return callJavaFunc(sc, api, *args)
+    java_args = [_py2java(sc, a) for a in args]
+    result = bridge.call(python_mllib_api, name, *java_args)
+    return _java2py(sc, result)
 
 
 class JavaModelWrapper:

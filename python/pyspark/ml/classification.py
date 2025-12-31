@@ -100,8 +100,9 @@ from pyspark.sql.utils import is_remote
 
 if TYPE_CHECKING:
     from pyspark.ml._typing import P, ParamMap
-    from py4j.java_gateway import JavaObject
     from pyspark.core.context import SparkContext
+
+from pyspark.jvm_bridge import JavaObjectRef
 
 
 T = TypeVar("T")
@@ -779,7 +780,7 @@ class LinearSVC(
         kwargs = self._input_kwargs
         return self._set(**kwargs)
 
-    def _create_model(self, java_model: "JavaObject") -> "LinearSVCModel":
+    def _create_model(self, java_model: "JavaObjectRef") -> "LinearSVCModel":
         return LinearSVCModel(java_model)
 
     @since("2.2.0")
@@ -1434,7 +1435,7 @@ class LogisticRegression(
         self._checkThresholdConsistency()
         return self
 
-    def _create_model(self, java_model: "JavaObject") -> "LogisticRegressionModel":
+    def _create_model(self, java_model: "JavaObjectRef") -> "LogisticRegressionModel":
         return LogisticRegressionModel(java_model)
 
     @since("2.1.0")
@@ -1850,7 +1851,7 @@ class DecisionTreeClassifier(
         kwargs = self._input_kwargs
         return self._set(**kwargs)
 
-    def _create_model(self, java_model: "JavaObject") -> "DecisionTreeClassificationModel":
+    def _create_model(self, java_model: "JavaObjectRef") -> "DecisionTreeClassificationModel":
         return DecisionTreeClassificationModel(java_model)
 
     def setMaxDepth(self, value: int) -> "DecisionTreeClassifier":
@@ -2152,7 +2153,7 @@ class RandomForestClassifier(
         kwargs = self._input_kwargs
         return self._set(**kwargs)
 
-    def _create_model(self, java_model: "JavaObject") -> "RandomForestClassificationModel":
+    def _create_model(self, java_model: "JavaObjectRef") -> "RandomForestClassificationModel":
         return RandomForestClassificationModel(java_model)
 
     def setMaxDepth(self, value: int) -> "RandomForestClassifier":
@@ -2625,7 +2626,7 @@ class GBTClassifier(
         kwargs = self._input_kwargs
         return self._set(**kwargs)
 
-    def _create_model(self, java_model: "JavaObject") -> "GBTClassificationModel":
+    def _create_model(self, java_model: "JavaObjectRef") -> "GBTClassificationModel":
         return GBTClassificationModel(java_model)
 
     def setMaxDepth(self, value: int) -> "GBTClassifier":
@@ -2995,7 +2996,7 @@ class NaiveBayes(
         kwargs = self._input_kwargs
         return self._set(**kwargs)
 
-    def _create_model(self, java_model: "JavaObject") -> "NaiveBayesModel":
+    def _create_model(self, java_model: "JavaObjectRef") -> "NaiveBayesModel":
         return NaiveBayesModel(java_model)
 
     @since("1.5.0")
@@ -3255,7 +3256,7 @@ class MultilayerPerceptronClassifier(
         kwargs = self._input_kwargs
         return self._set(**kwargs)
 
-    def _create_model(self, java_model: "JavaObject") -> "MultilayerPerceptronClassificationModel":
+    def _create_model(self, java_model: "JavaObjectRef") -> "MultilayerPerceptronClassificationModel":
         return MultilayerPerceptronClassificationModel(java_model)
 
     @since("1.6.0")
@@ -3649,7 +3650,7 @@ class OneVsRest(
         return newOvr
 
     @classmethod
-    def _from_java(cls, java_stage: "JavaObject") -> "OneVsRest":
+    def _from_java(cls, java_stage: "JavaObjectRef") -> "OneVsRest":
         """
         Given a Java OneVsRest, create and return a Python wrapper of it.
         Used for ML persistence.
@@ -3673,13 +3674,13 @@ class OneVsRest(
         py_stage._resetUid(java_stage.uid())
         return py_stage
 
-    def _to_java(self) -> "JavaObject":
+    def _to_java(self) -> "JavaObjectRef":
         """
         Transfer this instance to a Java OneVsRest. Used for ML persistence.
 
         Returns
         -------
-        py4j.java_gateway.JavaObject
+        py4j.java_gateway.JavaObjectRef
             Java object equivalent to this instance.
         """
         _java_obj = JavaParams._new_java_obj(
@@ -3901,7 +3902,7 @@ class OneVsRestModel(
         return newModel
 
     @classmethod
-    def _from_java(cls, java_stage: "JavaObject") -> "OneVsRestModel":
+    def _from_java(cls, java_stage: "JavaObjectRef") -> "OneVsRestModel":
         """
         Given a Java OneVsRestModel, create and return a Python wrapper of it.
         Used for ML persistence.
@@ -3921,13 +3922,13 @@ class OneVsRestModel(
         py_stage._resetUid(java_stage.uid())
         return py_stage
 
-    def _to_java(self) -> "JavaObject":
+    def _to_java(self) -> "JavaObjectRef":
         """
         Transfer this instance to a Java OneVsRestModel. Used for ML persistence.
 
         Returns
         -------
-        py4j.java_gateway.JavaObject
+        py4j.java_gateway.JavaObjectRef
             Java object equivalent to this instance.
         """
         from pyspark.core.context import SparkContext
@@ -4153,7 +4154,7 @@ class FMClassifier(
         kwargs = self._input_kwargs
         return self._set(**kwargs)
 
-    def _create_model(self, java_model: "JavaObject") -> "FMClassificationModel":
+    def _create_model(self, java_model: "JavaObjectRef") -> "FMClassificationModel":
         return FMClassificationModel(java_model)
 
     @since("3.0.0")

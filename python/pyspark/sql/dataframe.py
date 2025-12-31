@@ -48,7 +48,6 @@ from pyspark.sql.utils import dispatch_df_method
 
 
 if TYPE_CHECKING:
-    from py4j.java_gateway import JavaObject
     import pyarrow as pa
     from pyspark.core.context import SparkContext
     from pyspark.core.rdd import RDD
@@ -71,6 +70,8 @@ if TYPE_CHECKING:
     )
     from pyspark.sql.plot import PySparkPlotAccessor
     from pyspark.sql.metrics import ExecutionInfo
+
+from pyspark.jvm_bridge import JavaObjectRef
 
 
 __all__ = ["DataFrame", "DataFrameNaFunctions", "DataFrameStatFunctions"]
@@ -135,7 +136,7 @@ class DataFrame:
     _sql_ctx: Optional["SQLContext"]
     _session: "SparkSession"
     _sc: "SparkContext"
-    _jdf: "JavaObject"
+    _jdf: "JavaObjectRef"
     is_cached: bool
     _schema: Optional[StructType]
     _lazy_rdd: Optional["RDD[Row]"]
@@ -143,7 +144,7 @@ class DataFrame:
 
     def __new__(
         cls,
-        jdf: "JavaObject",
+        jdf: "JavaObjectRef",
         sql_ctx: Union["SQLContext", "SparkSession"],
     ) -> "DataFrame":
         from pyspark.sql.classic.dataframe import DataFrame

@@ -91,25 +91,15 @@ if TYPE_CHECKING:
 # since it requires making every single overridden definition.
 
 
-def _get_jvm_function(name: str, sc: "SparkContext") -> Callable:
-    """
-    Retrieves JVM function identified by name from
-    Java gateway associated with sc.
-    """
-    assert sc._jvm is not None
-    return getattr(getattr(sc._jvm, "org.apache.spark.sql.functions"), name)
-
-
 def _invoke_function(name: str, *args: Any) -> Column:
     """
     Invokes JVM function identified by name with args
     and wraps the result with :class:`~pyspark.sql.Column`.
     """
-    from pyspark import SparkContext
+    from pyspark.jvm_bridge import get_bridge
 
-    assert SparkContext._active_spark_context is not None
-    jf = _get_jvm_function(name, SparkContext._active_spark_context)
-    return Column(jf(*args))
+    bridge = get_bridge()
+    return Column(bridge.call_static("org.apache.spark.sql.functions", name, *args))
 
 
 def _invoke_function_over_columns(name: str, *cols: "ColumnOrName") -> Column:

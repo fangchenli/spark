@@ -406,14 +406,16 @@ class UserDefinedFunction:
 
     def _create_judf(self, func: Callable[..., Any]) -> "JavaObject":
         from pyspark.sql import SparkSession
+        from pyspark.jvm_bridge import get_bridge
 
         spark = SparkSession._getActiveSessionOrCreate()
         sc = spark.sparkContext
 
         wrapped_func = _wrap_function(sc, func, self.returnType)
         jdt = spark._jsparkSession.parseDataType(self.returnType.json())
-        assert sc._jvm is not None
-        judf = getattr(sc._jvm, "org.apache.spark.sql.execution.python.UserDefinedPythonFunction")(
+        bridge = get_bridge()
+        judf = bridge.new(
+            "org.apache.spark.sql.execution.python.UserDefinedPythonFunction",
             self._name, wrapped_func, jdt, self.evalType, self.deterministic
         )
         return judf

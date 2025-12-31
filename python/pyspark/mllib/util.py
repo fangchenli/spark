@@ -35,8 +35,9 @@ JL = TypeVar("JL", bound="JavaLoader")
 
 if TYPE_CHECKING:
     from pyspark.mllib._typing import VectorLike
-    from py4j.java_gateway import JavaObject
     from pyspark.mllib.regression import LabeledPoint
+
+from pyspark.jvm_bridge import JavaObjectRef
 
 
 class MLUtils:
@@ -481,7 +482,7 @@ class JavaSaveable(Saveable):
     .. versionadded:: 1.3.0
     """
 
-    _java_model: "JavaObject"
+    _java_model: "JavaObjectRef"
 
     @since("1.3.0")
     def save(self, sc: SparkContext, path: str) -> None:
@@ -541,12 +542,12 @@ class JavaLoader(Loader[T]):
         return ".".join([java_package, cls.__name__])
 
     @classmethod
-    def _load_java(cls, sc: SparkContext, path: str) -> "JavaObject":
+    def _load_java(cls, sc: SparkContext, path: str) -> "JavaObjectRef":
         """
         Load a Java model from the given path.
         """
         java_class = cls._java_loader_class()
-        java_obj: "JavaObject" = reduce(getattr, java_class.split("."), sc._jvm)
+        java_obj: "JavaObjectRef" = reduce(getattr, java_class.split("."), sc._jvm)
         return java_obj.load(sc._jsc.sc(), path)
 
     @classmethod

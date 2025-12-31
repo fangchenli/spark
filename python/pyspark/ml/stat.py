@@ -29,8 +29,7 @@ from pyspark.sql.functions import lit
 from pyspark.sql.types import ArrayType, DoubleType
 from pyspark.sql.utils import is_remote
 
-if TYPE_CHECKING:
-    from py4j.java_gateway import JavaObject
+from pyspark.jvm_bridge import JavaObjectRef
 
 
 class ChiSquareTest:
@@ -110,13 +109,14 @@ class ChiSquareTest:
 
         else:
             from pyspark.core.context import SparkContext
+            from pyspark.jvm_bridge import get_bridge
 
             sc = SparkContext._active_spark_context
             assert sc is not None
 
-            javaTestObj = getattr(_jvm(), "org.apache.spark.ml.stat.ChiSquareTest")
+            bridge = get_bridge()
             args = [_py2java(sc, arg) for arg in (dataset, featuresCol, labelCol, flatten)]
-            return _java2py(sc, javaTestObj.test(*args))
+            return _java2py(sc, bridge.call_static("org.apache.spark.ml.stat.ChiSquareTest", "test", *args))
 
 
 class Correlation:
@@ -185,13 +185,14 @@ class Correlation:
 
         else:
             from pyspark.core.context import SparkContext
+            from pyspark.jvm_bridge import get_bridge
 
             sc = SparkContext._active_spark_context
             assert sc is not None
 
-            javaCorrObj = getattr(_jvm(), "org.apache.spark.ml.stat.Correlation")
+            bridge = get_bridge()
             args = [_py2java(sc, arg) for arg in (dataset, column, method)]
-            return _java2py(sc, javaCorrObj.corr(*args))
+            return _java2py(sc, bridge.call_static("org.apache.spark.ml.stat.Correlation", "corr", *args))
 
 
 class KolmogorovSmirnovTest:
@@ -265,20 +266,24 @@ class KolmogorovSmirnovTest:
 
         else:
             from pyspark.core.context import SparkContext
+            from pyspark.jvm_bridge import get_bridge
 
             sc = SparkContext._active_spark_context
             assert sc is not None
 
-            javaTestObj = getattr(_jvm(), "org.apache.spark.ml.stat.KolmogorovSmirnovTest")
+            bridge = get_bridge()
             dataset = _py2java(sc, dataset)
             params = [float(param) for param in params]  # type: ignore[assignment]
+            params_seq = bridge.call_static("org.apache.spark.api.python.PythonUtils", "toSeq", params)
             return _java2py(
                 sc,
-                javaTestObj.test(
+                bridge.call_static(
+                    "org.apache.spark.ml.stat.KolmogorovSmirnovTest",
+                    "test",
                     dataset,
                     sampleCol,
                     distName,
-                    _jvm().PythonUtils.toSeq(params),
+                    params_seq,
                 ),
             )
 
@@ -497,7 +502,7 @@ class SummaryBuilder(JavaWrapper):
 
     """
 
-    def __init__(self, jSummaryBuilder: "JavaObject"):
+    def __init__(self, jSummaryBuilder: "JavaObjectRef"):
         if not is_remote():
             super().__init__(jSummaryBuilder)
 
