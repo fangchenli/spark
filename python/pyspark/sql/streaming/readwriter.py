@@ -31,7 +31,7 @@ from pyspark.errors import (
 )
 
 if TYPE_CHECKING:
-    from py4j.java_gateway import JavaObject
+    from pyspark.jvm_bridge import JavaObjectRef
     from pyspark.sql.session import SparkSession
     from pyspark.sql._typing import SupportsProcess, OptionalPrimitiveType
     from pyspark.sql.dataframe import DataFrame
@@ -75,7 +75,7 @@ class DataStreamReader(OptionUtils):
         self._jreader = spark._jsparkSession.readStream()
         self._spark = spark
 
-    def _df(self, jdf: "JavaObject") -> "DataFrame":
+    def _df(self, jdf: "JavaObjectRef") -> "DataFrame":
         from pyspark.sql.dataframe import DataFrame
 
         return DataFrame(jdf, self._spark)
@@ -908,7 +908,7 @@ class DataStreamWriter:
         self._spark = df.sparkSession
         self._jwrite = df._jdf.writeStream()
 
-    def _sq(self, jsq: "JavaObject") -> StreamingQuery:
+    def _sq(self, jsq: "JavaObjectRef") -> StreamingQuery:
         return StreamingQuery(jsq)
 
     def outputMode(self, outputMode: str) -> "DataStreamWriter":

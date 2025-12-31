@@ -28,7 +28,7 @@ from pyspark.sql.streaming.listener import (
 )
 
 if TYPE_CHECKING:
-    from py4j.java_gateway import JavaObject
+    from pyspark.jvm_bridge import JavaObjectRef
 
 __all__ = ["StreamingQuery", "StreamingQueryManager"]
 
@@ -48,7 +48,7 @@ class StreamingQuery:
     This API is evolving.
     """
 
-    def __init__(self, jsq: "JavaObject") -> None:
+    def __init__(self, jsq: "JavaObjectRef") -> None:
         self._jsq = jsq
 
     @property
@@ -457,7 +457,7 @@ class StreamingQueryManager:
     This API is evolving.
     """
 
-    def __init__(self, jsqm: "JavaObject") -> None:
+    def __init__(self, jsqm: "JavaObjectRef") -> None:
         self._jsqm = jsqm
 
     @property

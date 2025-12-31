@@ -38,7 +38,7 @@ from pyspark.sql.pandas.utils import require_minimum_pandas_version, require_min
 from pyspark.errors import PySparkTypeError, PySparkNotImplementedError, PySparkRuntimeError
 
 if TYPE_CHECKING:
-    from py4j.java_gateway import JavaObject
+    from pyspark.jvm_bridge import JavaObjectRef
     from pyspark.core.context import SparkContext
     from pyspark.sql._typing import DataTypeOrString, ColumnOrName, UserDefinedFunctionLike
     from pyspark.sql.session import SparkSession
@@ -48,7 +48,7 @@ __all__ = ["UDFRegistration"]
 
 def _wrap_function(
     sc: "SparkContext", func: Callable[..., Any], returnType: Optional[DataType] = None
-) -> "JavaObject":
+) -> "JavaObjectRef":
     from pyspark.core.rdd import _prepare_for_python_RDD
     from pyspark.jvm_bridge import get_bridge
 
@@ -395,7 +395,7 @@ class UserDefinedFunction:
         return self._returnType_placeholder
 
     @property
-    def _judf(self) -> "JavaObject":
+    def _judf(self) -> "JavaObjectRef":
         # It is possible that concurrent access, to newly created UDF,
         # will initialize multiple UserDefinedPythonFunctions.
         # This is unlikely, doesn't affect correctness,
@@ -404,7 +404,7 @@ class UserDefinedFunction:
             self._judf_placeholder = self._create_judf(self.func)
         return self._judf_placeholder
 
-    def _create_judf(self, func: Callable[..., Any]) -> "JavaObject":
+    def _create_judf(self, func: Callable[..., Any]) -> "JavaObjectRef":
         from pyspark.sql import SparkSession
         from pyspark.jvm_bridge import get_bridge
 

@@ -19,7 +19,12 @@ from typing import overload, Optional, Dict, TYPE_CHECKING
 from pyspark.util import _parse_memory
 
 if TYPE_CHECKING:
-    from py4j.java_gateway import JavaObject, JVMView
+    from typing import Any
+
+    from pyspark.jvm_bridge import JavaObjectRef
+
+    # JVMView type alias for backward compatibility
+    JVMView = Any
 
 
 class ExecutorResourceRequest:
@@ -474,7 +479,7 @@ class TaskResourceRequests:
             jvm = _jvm or SparkContext._jvm
 
         if jvm is not None:
-            self._java_task_resource_requests: Optional["JavaObject"] = getattr(
+            self._java_task_resource_requests: Optional["JavaObjectRef"] = getattr(
                 jvm, "org.apache.spark.resource.TaskResourceRequests"
             )()
             if _requests is not None:

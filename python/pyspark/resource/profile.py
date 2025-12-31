@@ -25,7 +25,7 @@ from pyspark.resource.requests import (
 )
 
 if TYPE_CHECKING:
-    from py4j.java_gateway import JavaObject
+    from pyspark.jvm_bridge import JavaObjectRef
 
 
 class ResourceProfile:
@@ -85,7 +85,7 @@ class ResourceProfile:
     """
 
     @overload
-    def __init__(self, _java_resource_profile: "JavaObject"):
+    def __init__(self, _java_resource_profile: "JavaObjectRef"):
         ...
 
     @overload
@@ -99,7 +99,7 @@ class ResourceProfile:
 
     def __init__(
         self,
-        _java_resource_profile: Optional["JavaObject"] = None,
+        _java_resource_profile: Optional["JavaObjectRef"] = None,
         _exec_req: Optional[Dict[str, ExecutorResourceRequest]] = None,
         _task_req: Optional[Dict[str, TaskResourceRequest]] = None,
     ):
