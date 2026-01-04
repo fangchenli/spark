@@ -16,6 +16,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+"""
+PySpark build script.
+
+This setup.py handles the dynamic aspects of the PySpark build that cannot be
+expressed declaratively in pyproject.toml:
+- Creating symlinks to JARs, scripts, and data files from the parent Spark directory
+- Dynamic package discovery for non-standard directory layouts
+- Custom install command for downloading Spark distributions
+
+Static metadata (name, version, dependencies, classifiers) is defined in pyproject.toml.
+"""
+
 import importlib.util
 import glob
 import os
@@ -145,19 +157,6 @@ if in_spark:
         )
         sys.exit(-1)
 
-# If you are changing the versions here, please also change ./python/pyspark/sql/pandas/utils.py
-# For Arrow, you should also check ./pom.xml and ensure there are no breaking changes in the
-# binary format protocol with the Java version, see ARROW_HOME/format/* for specifications.
-# Also don't forget to update python/docs/source/getting_started/install.rst,
-# python/packaging/client/setup.py, and python/packaging/connect/setup.py
-_minimum_pandas_version = "2.2.0"
-_minimum_numpy_version = "1.21"
-_minimum_pyarrow_version = "18.0.0"
-_minimum_grpc_version = "1.76.0"
-_minimum_googleapis_common_protos_version = "1.71.0"
-_minimum_pyyaml_version = "3.11"
-_minimum_zstandard_version = "0.25.0"
-
 
 class InstallCommand(install):
     # TODO(SPARK-32837) leverage pip's custom options
@@ -206,14 +205,14 @@ try:
     copyfile("pyspark/shell.py", "pyspark/python/pyspark/shell.py")
 
     if in_spark:
-        # !!HACK ALTERT!!
+        # !!HACK ALERT!!
         # `setup.py` has to be located with the same directory with the package.
         # Therefore, we copy the current file, and place it at `spark/python` directory.
         # After that, we remove it in the end.
         copyfile("packaging/classic/setup.py", "setup.py")
         copyfile("packaging/classic/setup.cfg", "setup.cfg")
 
-        # Construct the symlink farm - this is nein_sparkcessary since we can't refer to
+        # Construct the symlink farm - this is necessary since we can't refer to
         # the path above the package root and we need to copy the jars and scripts which
         # are up above the python root.
         if _supports_symlinks():
@@ -250,149 +249,15 @@ try:
     # will search for SPARK_HOME with Python.
     scripts.append("pyspark/find_spark_home.py")
 
-    with open("README.md") as f:
-        long_description = f.read()
-
+    # Dynamic configuration that cannot be expressed declaratively in pyproject.toml:
+    # - scripts: built dynamically from deps/bin directory contents
+    # - cmdclass: custom install command for downloading Spark distributions
+    #
+    # Static configuration (packages, package_dir, package_data, dependencies, etc.)
+    # is defined in pyproject.toml
     setup(
-        name="pyspark",
-        version=VERSION,
-        description="Apache Spark Python API",
-        long_description=long_description,
-        long_description_content_type="text/markdown",
-        author="Spark Developers",
-        author_email="dev@spark.apache.org",
-        url="https://github.com/apache/spark/tree/master/python",
-        packages=[
-            "pyspark",
-            "pyspark.core",
-            "pyspark.cloudpickle",
-            "pyspark.mllib",
-            "pyspark.mllib.linalg",
-            "pyspark.mllib.stat",
-            "pyspark.ml",
-            "pyspark.ml.connect",
-            "pyspark.ml.linalg",
-            "pyspark.ml.param",
-            "pyspark.ml.torch",
-            "pyspark.ml.deepspeed",
-            "pyspark.sql",
-            "pyspark.sql.avro",
-            "pyspark.sql.classic",
-            "pyspark.sql.connect",
-            "pyspark.sql.connect.avro",
-            "pyspark.sql.connect.client",
-            "pyspark.sql.connect.functions",
-            "pyspark.sql.connect.proto",
-            "pyspark.sql.connect.protobuf",
-            "pyspark.sql.connect.resource",
-            "pyspark.sql.connect.shell",
-            "pyspark.sql.connect.streaming",
-            "pyspark.sql.connect.streaming.worker",
-            "pyspark.sql.functions",
-            "pyspark.sql.pandas",
-            "pyspark.sql.plot",
-            "pyspark.sql.protobuf",
-            "pyspark.sql.streaming",
-            "pyspark.sql.streaming.proto",
-            "pyspark.sql.worker",
-            "pyspark.streaming",
-            "pyspark.bin",
-            "pyspark.sbin",
-            "pyspark.jars",
-            "pyspark.pandas",
-            "pyspark.pandas.data_type_ops",
-            "pyspark.pandas.indexes",
-            "pyspark.pandas.missing",
-            "pyspark.pandas.plot",
-            "pyspark.pandas.spark",
-            "pyspark.pandas.typedef",
-            "pyspark.pandas.usage_logging",
-            "pyspark.pipelines",
-            "pyspark.python.pyspark",
-            "pyspark.python.lib",
-            "pyspark.testing",
-            "pyspark.data",
-            "pyspark.licenses",
-            "pyspark.resource",
-            "pyspark.errors",
-            "pyspark.errors.exceptions",
-            "pyspark.examples.src.main.python",
-            "pyspark.logger",
-        ],
-        include_package_data=True,
-        package_dir={
-            "pyspark.jars": "deps/jars",
-            "pyspark.bin": "deps/bin",
-            "pyspark.sbin": "deps/sbin",
-            "pyspark.python.lib": "lib",
-            "pyspark.data": "deps/data",
-            "pyspark.licenses": "deps/licenses",
-            "pyspark.examples.src.main.python": "deps/examples",
-        },
-        package_data={
-            "pyspark.jars": ["*.jar"],
-            "pyspark.bin": ["*"],
-            "pyspark.sbin": [
-                "spark-config.sh",
-                "spark-daemon.sh",
-                "start-history-server.sh",
-                "stop-history-server.sh",
-            ],
-            "pyspark.python.lib": ["*.zip"],
-            "pyspark.data": ["*.txt", "*.data"],
-            "pyspark.licenses": ["*.txt"],
-            "pyspark.examples.src.main.python": ["*.py", "*/*.py"],
-        },
+
         scripts=scripts,
-        license="Apache-2.0",
-        # Don't forget to update python/docs/source/getting_started/install.rst
-        # if you're updating the versions or dependencies.
-        install_requires=["py4j>=0.10.9.7,<0.10.9.10"],
-        extras_require={
-            "ml": ["numpy>=%s" % _minimum_numpy_version],
-            "mllib": ["numpy>=%s" % _minimum_numpy_version],
-            "sql": [
-                "pandas>=%s" % _minimum_pandas_version,
-                "pyarrow>=%s" % _minimum_pyarrow_version,
-                "numpy>=%s" % _minimum_numpy_version,
-            ],
-            "pandas_on_spark": [
-                "pandas>=%s" % _minimum_pandas_version,
-                "pyarrow>=%s" % _minimum_pyarrow_version,
-                "numpy>=%s" % _minimum_numpy_version,
-            ],
-            "connect": [
-                "pandas>=%s" % _minimum_pandas_version,
-                "pyarrow>=%s" % _minimum_pyarrow_version,
-                "grpcio>=%s" % _minimum_grpc_version,
-                "grpcio-status>=%s" % _minimum_grpc_version,
-                "googleapis-common-protos>=%s" % _minimum_googleapis_common_protos_version,
-                "zstandard>=%s" % _minimum_zstandard_version,
-                "numpy>=%s" % _minimum_numpy_version,
-            ],
-            "pipelines": [
-                "pandas>=%s" % _minimum_pandas_version,
-                "pyarrow>=%s" % _minimum_pyarrow_version,
-                "numpy>=%s" % _minimum_numpy_version,
-                "grpcio>=%s" % _minimum_grpc_version,
-                "grpcio-status>=%s" % _minimum_grpc_version,
-                "googleapis-common-protos>=%s" % _minimum_googleapis_common_protos_version,
-                "zstandard>=%s" % _minimum_zstandard_version,
-                "pyyaml>=%s" % _minimum_pyyaml_version,
-            ],
-        },
-        python_requires=">=3.10",
-        classifiers=[
-            "Development Status :: 5 - Production/Stable",
-            "Programming Language :: Python :: 3.10",
-            "Programming Language :: Python :: 3.11",
-            "Programming Language :: Python :: 3.12",
-            "Programming Language :: Python :: 3.13",
-            "Programming Language :: Python :: 3.14",
-            "Programming Language :: Python :: Implementation :: CPython",
-            "Programming Language :: Python :: Implementation :: PyPy",
-            "Typing :: Typed",
-        ],
         cmdclass={
             "install": InstallCommand,
         },

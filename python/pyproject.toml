@@ -15,6 +15,102 @@
 # limitations under the License.
 #
 
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pyspark"
+description = "Apache Spark Python API"
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.10"
+authors = [
+    {name = "Spark Developers", email = "dev@spark.apache.org"},
+]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Programming Language :: Python :: Implementation :: PyPy",
+    "Typing :: Typed",
+]
+# Version is read dynamically from pyspark/version.py
+dynamic = ["version"]
+
+# Core dependency - only py4j is required for basic pyspark
+dependencies = [
+    "py4j>=0.10.9.7,<0.10.9.10",
+]
+
+[project.optional-dependencies]
+ml = ["numpy>=1.21"]
+mllib = ["numpy>=1.21"]
+sql = [
+    "pandas>=2.2.0",
+    "pyarrow>=15.0.0",
+    "numpy>=1.21",
+]
+pandas_on_spark = [
+    "pandas>=2.2.0",
+    "pyarrow>=15.0.0",
+    "numpy>=1.21",
+]
+connect = [
+    "pandas>=2.2.0",
+    "pyarrow>=15.0.0",
+    "grpcio>=1.76.0",
+    "grpcio-status>=1.76.0",
+    "googleapis-common-protos>=1.71.0",
+    "zstandard>=0.25.0",
+    "numpy>=1.21",
+]
+pipelines = [
+    "pandas>=2.2.0",
+    "pyarrow>=15.0.0",
+    "numpy>=1.21",
+    "grpcio>=1.76.0",
+    "grpcio-status>=1.76.0",
+    "googleapis-common-protos>=1.71.0",
+    "zstandard>=0.25.0",
+    "pyyaml>=3.11",
+]
+
+[project.urls]
+Homepage = "https://spark.apache.org/"
+Documentation = "https://spark.apache.org/docs/latest/api/python/"
+Repository = "https://github.com/apache/spark/tree/master/python"
+Changelog = "https://spark.apache.org/releases/"
+
+[tool.setuptools.dynamic]
+version = {attr = "pyspark.version.__version__"}
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["pyspark*"]
+
+[tool.setuptools.package-dir]
+"pyspark.jars" = "deps/jars"
+"pyspark.bin" = "deps/bin"
+"pyspark.sbin" = "deps/sbin"
+"pyspark.python.lib" = "lib"
+"pyspark.data" = "deps/data"
+"pyspark.licenses" = "deps/licenses"
+"pyspark.examples.src.main.python" = "deps/examples"
+
+[tool.setuptools.package-data]
+"pyspark.jars" = ["*.jar"]
+"pyspark.bin" = ["*"]
+"pyspark.sbin" = ["spark-config.sh", "spark-daemon.sh", "start-history-server.sh", "stop-history-server.sh"]
+"pyspark.python.lib" = ["*.zip"]
+"pyspark.data" = ["*.txt", "*.data"]
+"pyspark.licenses" = ["*.txt"]
+"pyspark.examples.src.main.python" = ["*.py", "*/*.py"]
+
 [tool.pytest.ini_options]
 # Pytest is used only to run mypy data tests
 python_files = "test_*.yml"
