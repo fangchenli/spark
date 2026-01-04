@@ -17,9 +17,9 @@
 # limitations under the License.
 
 # cd python
-# python packaging/classic/setup.py sdist
+# python distributions/client/setup.py sdist
 
-# cd python/packaging/classic
+# cd python/distributions/client
 # python setup.py sdist
 
 import sys
@@ -31,17 +31,17 @@ from pathlib import Path
 
 if (
     # When we package, the parent directory 'client' dir
-    # (as we pip install -e python/packaging/client)
+    # (as we pip install -e python/distributions/client)
     os.getcwd() == str(Path(__file__).parent.absolute())
     and str(Path(__file__).parent.name) == "client"
 ):
     # For:
-    # - pip install -e python/packaging/client
+    # - pip install -e python/distributions/client
     #     It moves the current working directory to 'client'
-    # - cd python/packaging/client; python setup.py sdist
+    # - cd python/distributions/client; python setup.py sdist
     #
     # For:
-    # - python packaging/client/setup.py sdist, it does not
+    # - python distributions/client/setup.py sdist, it does not
     #     execute this branch.
     #
     # Move to spark/python
@@ -125,14 +125,14 @@ try:
         # 2. Here it renames `lib` to `lib.back` so MANIFEST.in does not pick `py4j` up.
         #    We rename it back in the end.
         move("lib", "lib.back")
-        copyfile("packaging/client/setup.py", "setup.py")
-        copyfile("packaging/client/setup.cfg", "setup.cfg")
+        copyfile("distributions/client/setup.py", "setup.py")
+        copyfile("distributions/client/setup.cfg", "setup.cfg")
 
     # If you are changing the versions here, please also change ./python/pyspark/sql/pandas/utils.py
     # For Arrow, you should also check ./pom.xml and ensure there are no breaking changes in the
     # binary format protocol with the Java version, see ARROW_HOME/format/* for specifications.
     # Also don't forget to update python/docs/source/getting_started/install.rst,
-    # python/packaging/classic/setup.py, and python/packaging/connect/setup.py
+    # python/pyproject.toml, and python/distributions/connect/setup.py
     _minimum_pandas_version = "2.2.0"
     _minimum_numpy_version = "1.21"
     _minimum_pyarrow_version = "18.0.0"

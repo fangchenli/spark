@@ -17,9 +17,9 @@
 # limitations under the License.
 
 # cd python
-# python packaging/connect/setup.py sdist
+# python distributions/connect/setup.py sdist
 
-# cd python/packaging/connect
+# cd python/distributions/connect
 # python setup.py sdist
 
 import sys
@@ -31,17 +31,17 @@ from pathlib import Path
 
 if (
     # When we package, the parent directory 'connect' dir
-    # (as we pip install -e python/packaging/connect)
+    # (as we pip install -e python/distributions/connect)
     os.getcwd() == str(Path(__file__).parent.absolute())
     and str(Path(__file__).parent.name) == "connect"
 ):
     # For:
-    # - pip install -e python/packaging/connect
+    # - pip install -e python/distributions/connect
     #     It moves the current working directory to 'connect'
-    # - cd python/packaging/connect; python setup.py sdist
+    # - cd python/distributions/connect; python setup.py sdist
     #
     # For:
-    # - python packaging/connect/setup.py sdist, it does not
+    # - python distributions/connect/setup.py sdist, it does not
     #     execute this branch.
     #
     # Move to spark/python
@@ -65,9 +65,9 @@ try:
         #    does not pick `pyspark` and `py4j` up. We rename it back in the end.
         move("pyspark", "pyspark.back")
         move("lib", "lib.back")
-        copyfile("packaging/connect/setup.py", "setup.py")
-        copyfile("packaging/connect/setup.cfg", "setup.cfg")
-        copytree("packaging/connect/pyspark_connect", "pyspark_connect")
+        copyfile("distributions/connect/setup.py", "setup.py")
+        copyfile("distributions/connect/setup.cfg", "setup.cfg")
+        copytree("distributions/connect/pyspark_connect", "pyspark_connect")
         copyfile("pyspark.back/version.py", "pyspark_connect/version.py")
 
     try:
@@ -85,7 +85,7 @@ try:
     # For Arrow, you should also check ./pom.xml and ensure there are no breaking changes in the
     # binary format protocol with the Java version, see ARROW_HOME/format/* for specifications.
     # Also don't forget to update python/docs/source/getting_started/install.rst,
-    # python/packaging/classic/setup.py, and python/packaging/client/setup.py
+    # pyproject.toml, and python/distributions/client/setup.py
     _minimum_pandas_version = "2.2.0"
     _minimum_numpy_version = "1.21"
     _minimum_pyarrow_version = "18.0.0"

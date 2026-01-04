@@ -221,9 +221,9 @@ For information about how to run individual tests, refer to the
 
 ## PySpark pip installable
 
-If you are building Spark for use in a Python environment and you wish to pip install it, you will first need to build the Spark JARs as described above. Then you can construct an sdist package suitable for setup.py and pip installable package.
+If you are building Spark for use in a Python environment and you wish to pip install it, you will first need to build the Spark JARs as described above. Then you can construct an sdist package suitable for pip installation.
 
-    cd python; python packaging/classic/setup.py sdist
+    cd python; python -m build --sdist
 
 **Note:** Due to packaging requirements you can not directly pip install from the Python directory, rather you must first build the sdist package as described above.
 

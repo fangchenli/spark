@@ -228,8 +228,8 @@
     <sbt-jupiter-interface.version>0.17.0</sbt-jupiter-interface.version>
     <!--
     If you are changing Arrow version specification, please check
-    ./python/pyspark/sql/pandas/utils.py, ./python/packaging/classic/setup.py,
-    ./python/packaging/client/setup.py, and ./python/packaging/connect/setup.py too.
+    ./python/pyspark/sql/pandas/utils.py, ./python/pyproject.toml,
+    ./python/distributions/client/setup.py, and ./python/distributions/connect/setup.py too.
     -->
     <arrow.version>18.3.0</arrow.version>
     <ammonite.version>3.0.5</ammonite.version>
