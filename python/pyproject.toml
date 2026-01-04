@@ -1,0 +1,197 @@
+#
+# Licensed to the Apache Software Foundation (ASF) under one or more
+# contributor license agreements.  See the NOTICE file distributed with
+# this work for additional information regarding copyright ownership.
+# The ASF licenses this file to You under the Apache License, Version 2.0
+# (the "License"); you may not use this file except in compliance with
+# the License.  You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+
+[tool.pytest.ini_options]
+# Pytest is used only to run mypy data tests
+python_files = "test_*.yml"
+testpaths = [
+    "pyspark/tests/typing",
+    "pyspark/sql/tests/typing",
+    "pyspark/ml/typing",
+]
+
+[tool.ruff]
+# Note: paths are relative to repo root since ruff is invoked from there
+exclude = [
+    "*/target/*",
+    "**/*.ipynb",
+    "docs/.local_ruby_bundle/",
+    "python/pyspark/cloudpickle/*.py",
+    "python/pyspark/ml/deepspeed/tests/*.py",
+    "python/docs/build/*",
+    "python/docs/source/conf.py",
+    "python/.eggs/*",
+    "dist/*",
+    ".git/*",
+    "python/pyspark/sql/pandas/functions.pyi",
+    "python/pyspark/sql/column.pyi",
+    "python/pyspark/worker.pyi",
+    "python/pyspark/java_gateway.pyi",
+    "python/pyspark/sql/connect/proto/*",
+    "python/pyspark/sql/streaming/proto/*",
+    "*venv*/*",
+]
+
+[tool.ruff.lint]
+ignore = [
+    "E203",  # Skip as black formatter adds a whitespace around ':'.
+    "E402",  # Module top level import is disabled for optional import check, etc.
+    # TODO
+    "E721",  # Use isinstance for type comparison, too many for now.
+    "E741",  # Ambiguous variables like l, I or O.
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Note: paths are relative to repo root since ruff is invoked from there
+# E501 is ignored as shared.py is auto-generated.
+"python/pyspark/ml/param/shared.py" = ["E501"]
+# E501 is ignored as we should keep the json string format in error_classes.py.
+"python/pyspark/errors/error_classes.py" = ["E501"]
+# Examples contain some unused variables.
+"examples/src/main/python/sql/datasource.py" = ["F841"]
+# Exclude * imports in test files
+"python/pyspark/errors/tests/*.py" = ["F403"]
+"python/pyspark/logger/tests/*.py" = ["F403"]
+"python/pyspark/logger/tests/connect/*.py" = ["F403"]
+"python/pyspark/ml/tests/*.py" = ["F403"]
+"python/pyspark/mllib/tests/*.py" = ["F403"]
+"python/pyspark/pandas/tests/*.py" = ["F401", "F403"]
+"python/pyspark/pandas/tests/connect/*.py" = ["F401", "F403"]
+"python/pyspark/resource/tests/*.py" = ["F403"]
+"python/pyspark/sql/tests/*.py" = ["F403"]
+"python/pyspark/streaming/tests/*.py" = ["F403"]
+"python/pyspark/tests/*.py" = ["F403"]
+"python/pyspark/testing/*.py" = ["F401"]
+"python/pyspark/testing/tests/*.py" = ["F403"]
+
+[tool.black]
+# When changing the version, we have to update
+# GitHub workflow version and dev/reformat-python
+required-version = "23.12.1"
+line-length = 100
+target-version = ['py39']
+include = '\.pyi?$'
+extend-exclude = 'cloudpickle|error_classes.py'
+
+[tool.mypy]
+strict_optional = true
+no_implicit_optional = true
+disallow_untyped_defs = true
+show_error_codes = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+namespace_packages = true
+
+[[tool.mypy.overrides]]
+module = "pyspark.sql.connect.proto.*"
+ignore_errors = true
+
+[[tool.mypy.overrides]]
+module = "pyspark.sql.pandas.types"
+disable_error_code = "misc"
+
+# Allow untyped def in internal modules
+[[tool.mypy.overrides]]
+module = [
+    "pyspark.daemon",
+    "pyspark.find_spark_home",
+    "pyspark._globals",
+    "pyspark.install",
+    "pyspark.java_gateway",
+    "pyspark.join",
+    "pyspark.rddsampler",
+    "pyspark.serializers",
+    "pyspark.shuffle",
+    "pyspark.streaming.util",
+    "pyspark.sql.pandas.serializers",
+    "pyspark.sql.pandas._typing.protocols.*",
+    "pyspark.pandas.missing.*",
+    "pyspark.pandas.plot.*",
+    "pyspark.pandas.usage_logging.*",
+    "pyspark.traceback_utils",
+    "pyspark.worker",
+]
+disallow_untyped_defs = false
+
+# Allow untyped def and disable certain error codes in examples
+[[tool.mypy.overrides]]
+module = "python.sql.udtf"
+disallow_untyped_defs = false
+disable_error_code = ["attr-defined", "arg-type", "call-arg", "union-attr"]
+
+# Ignore errors in tests
+[[tool.mypy.overrides]]
+module = [
+    "pyspark.ml.tests.*",
+    "pyspark.ml.torch.tests.*",
+    "pyspark.ml.deepspeed.tests.*",
+    "pyspark.mllib.tests.*",
+    "pyspark.resource.tests.*",
+    "pyspark.streaming.tests.*",
+    "pyspark.sql.tests.*",
+    "pyspark.pandas.tests.*",
+    "pyspark.pipelines.tests.*",
+    "pyspark.tests.*",
+    "pyspark.testing.*",
+    "pyspark.errors.tests.*",
+    "pyspark.logger.tests.*",
+]
+ignore_errors = true
+
+# Allow non-strict optional for pyspark.pandas
+[[tool.mypy.overrides]]
+module = "pyspark.pandas.*"
+strict_optional = false
+
+# Ignore errors in embedded third party code
+[[tool.mypy.overrides]]
+module = "pyspark.cloudpickle.*"
+ignore_errors = true
+
+# Ignore missing imports for pyspark_connect
+[[tool.mypy.overrides]]
+module = "pyspark_connect.*"
+ignore_missing_imports = true
+
+# Ignore missing imports for external untyped packages
+[[tool.mypy.overrides]]
+module = [
+    "py4j.*",
+    "scipy.*",
+    "pyarrow.*",
+    "psutil.*",
+    "matplotlib.*",
+    "plotly.*",
+    "mlflow.*",
+    "sklearn.*",
+    "tabulate.*",
+    "google.protobuf.*",
+    "grpc.*",
+    "memory_profiler.*",
+    "flameprof.*",
+    "yaml.*",
+]
+ignore_missing_imports = true
+
+# Ignore errors for proto generated code
+[[tool.mypy.overrides]]
+module = [
+    "pyspark.sql.connect.proto.*",
+    "pyspark.sql.connect.proto",
+    "pyspark.sql.streaming.proto",
+]
+ignore_errors = true

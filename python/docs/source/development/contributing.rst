@@ -195,7 +195,7 @@ Annotations can be validated using ``dev/lint-python`` script or by invoking myp
 
 .. code-block:: bash
 
-    mypy --config python/mypy.ini python/pyspark
+    mypy --config python/pyproject.toml python/pyspark
 
 
 Code and Docstring Guide
