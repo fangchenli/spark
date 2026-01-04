@@ -90,9 +90,71 @@ Changelog = "https://spark.apache.org/releases/"
 [tool.setuptools.dynamic]
 version = {attr = "pyspark.version.__version__"}
 
-[tool.setuptools.packages.find]
-where = ["."]
-include = ["pyspark*"]
+# All packages must be explicitly listed because setuptools' pyproject.toml
+# doesn't support combining packages.find with explicit packages.
+# This includes both Python packages (with __init__.py) and virtual packages
+# for non-Python data files (JARs, scripts, data, etc.)
+[tool.setuptools]
+packages = [
+    # Python packages
+    "pyspark",
+    "pyspark.cloudpickle",
+    "pyspark.core",
+    "pyspark.errors",
+    "pyspark.errors.exceptions",
+    "pyspark.logger",
+    "pyspark.ml",
+    "pyspark.ml.connect",
+    "pyspark.ml.deepspeed",
+    "pyspark.ml.linalg",
+    "pyspark.ml.param",
+    "pyspark.ml.torch",
+    "pyspark.mllib",
+    "pyspark.mllib.linalg",
+    "pyspark.mllib.stat",
+    "pyspark.pandas",
+    "pyspark.pandas.data_type_ops",
+    "pyspark.pandas.indexes",
+    "pyspark.pandas.missing",
+    "pyspark.pandas.plot",
+    "pyspark.pandas.spark",
+    "pyspark.pandas.typedef",
+    "pyspark.pandas.usage_logging",
+    "pyspark.pipelines",
+    "pyspark.resource",
+    "pyspark.sql",
+    "pyspark.sql.avro",
+    "pyspark.sql.classic",
+    "pyspark.sql.connect",
+    "pyspark.sql.connect.avro",
+    "pyspark.sql.connect.client",
+    "pyspark.sql.connect.functions",
+    "pyspark.sql.connect.proto",
+    "pyspark.sql.connect.protobuf",
+    "pyspark.sql.connect.resource",
+    "pyspark.sql.connect.shell",
+    "pyspark.sql.connect.streaming",
+    "pyspark.sql.connect.streaming.worker",
+    "pyspark.sql.functions",
+    "pyspark.sql.pandas",
+    "pyspark.sql.plot",
+    "pyspark.sql.protobuf",
+    "pyspark.sql.streaming",
+    "pyspark.sql.streaming.benchmark",
+    "pyspark.sql.streaming.proto",
+    "pyspark.sql.worker",
+    "pyspark.streaming",
+    "pyspark.testing",
+    # Virtual packages for non-Python data files
+    "pyspark.bin",
+    "pyspark.sbin",
+    "pyspark.jars",
+    "pyspark.data",
+    "pyspark.licenses",
+    "pyspark.examples",
+    "pyspark.python.lib",
+    "pyspark.python.pyspark",
+]
 
 [tool.setuptools.package-dir]
 "pyspark.jars" = "deps/jars"
@@ -101,16 +163,18 @@ include = ["pyspark*"]
 "pyspark.python.lib" = "lib"
 "pyspark.data" = "deps/data"
 "pyspark.licenses" = "deps/licenses"
-"pyspark.examples.src.main.python" = "deps/examples"
+"pyspark.examples" = "deps/examples"
 
 [tool.setuptools.package-data]
+"pyspark" = ["py.typed", "*.pyi"]
 "pyspark.jars" = ["*.jar"]
 "pyspark.bin" = ["*"]
 "pyspark.sbin" = ["spark-config.sh", "spark-daemon.sh", "start-history-server.sh", "stop-history-server.sh"]
 "pyspark.python.lib" = ["*.zip"]
 "pyspark.data" = ["*.txt", "*.data"]
 "pyspark.licenses" = ["*.txt"]
-"pyspark.examples.src.main.python" = ["*.py", "*/*.py"]
+"pyspark.examples" = ["**/*.py"]
+"*" = ["*.pyi"]
 
 [tool.pytest.ini_options]
 # Pytest is used only to run mypy data tests
