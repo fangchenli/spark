@@ -86,6 +86,7 @@ Homepage = "https://spark.apache.org/"
 Documentation = "https://spark.apache.org/docs/latest/api/python/"
 Repository = "https://github.com/apache/spark/tree/master/python"
 Changelog = "https://spark.apache.org/releases/"
+Issues = "https://issues.apache.org/jira/projects/SPARK"
 
 [tool.setuptools.dynamic]
 version = {attr = "pyspark.version.__version__"}
