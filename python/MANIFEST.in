@@ -25,6 +25,7 @@ recursive-include deps/licenses *.txt
 recursive-include deps/examples *.py
 recursive-include lib *.zip
 include README.md
+include build_backend.py
 
 # Note that these commands are processed in the order they appear, so keep
 # this exclude at the end.
