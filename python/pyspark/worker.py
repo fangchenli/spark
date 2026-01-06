@@ -2908,6 +2908,10 @@ def read_udfs(pickleSer, infile, eval_type, runner_conf):
                 else None
             )
 
+            # Enable lazy struct conversion for mapInPandas to defer Arrow-to-Pandas
+            # conversion until columns are actually accessed
+            lazy_struct_conversion = eval_type == PythonEvalType.SQL_MAP_PANDAS_ITER_UDF
+
             ser = ArrowStreamPandasUDFSerializer(
                 runner_conf.timezone,
                 runner_conf.safecheck,
@@ -2918,6 +2922,7 @@ def read_udfs(pickleSer, infile, eval_type, runner_conf):
                 True,
                 input_types,
                 int_to_decimal_coercion_enabled=runner_conf.int_to_decimal_coercion_enabled,
+                lazy_struct_conversion=lazy_struct_conversion,
             )
     else:
         batch_size = int(os.environ.get("PYTHON_UDF_BATCH_SIZE", "100"))

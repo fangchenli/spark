@@ -64,6 +64,126 @@ class SpecialLengths:
     START_ARROW_STREAM = -6
 
 
+class LazyArrowDataFrame:
+    """
+    A lazy DataFrame wrapper that defers Arrow-to-Pandas conversion until columns are accessed.
+
+    This improves performance for mapInPandas and similar operations where the UDF may only
+    access a subset of columns.
+    """
+
+    def __init__(self, arrow_struct_column, converter_func, field_names):
+        """
+        Parameters
+        ----------
+        arrow_struct_column : pyarrow.ChunkedArray or pyarrow.Array
+            The Arrow struct column containing all fields
+        converter_func : callable
+            Function to convert an Arrow column to pandas Series: (arrow_col, idx) -> pd.Series
+        field_names : list[str]
+            Names of the fields in the struct
+        """
+        self._arrow_struct = arrow_struct_column
+        self._converter = converter_func
+        self._field_names = field_names
+        self._name_to_idx = {name: i for i, name in enumerate(field_names)}
+        self._cache = {}  # Cache converted columns
+        self._materialized_df = None  # Full DataFrame once materialized
+
+    def _get_arrow_field(self, idx):
+        """Get Arrow column for field at index."""
+        return self._arrow_struct.flatten()[idx]
+
+    def _convert_column(self, idx):
+        """Convert a single column, using cache."""
+        if idx not in self._cache:
+            arrow_col = self._get_arrow_field(idx)
+            self._cache[idx] = self._converter(arrow_col, idx)
+        return self._cache[idx]
+
+    def _materialize(self):
+        """Convert all columns and return a real DataFrame."""
+        if self._materialized_df is None:
+            import pandas as pd
+
+            series_list = [
+                self._convert_column(i).rename(name) for i, name in enumerate(self._field_names)
+            ]
+            self._materialized_df = pd.concat(series_list, axis=1)
+        return self._materialized_df
+
+    @property
+    def columns(self):
+        """Return column names."""
+        import pandas as pd
+
+        return pd.Index(self._field_names)
+
+    @property
+    def dtypes(self):
+        """Return dtypes - requires materialization."""
+        return self._materialize().dtypes
+
+    @property
+    def shape(self):
+        """Return shape."""
+        return (len(self._arrow_struct), len(self._field_names))
+
+    @property
+    def index(self):
+        """Return index - requires materialization for consistency."""
+        return self._materialize().index
+
+    @property
+    def values(self):
+        """Return numpy array - requires full materialization."""
+        return self._materialize().values
+
+    def __len__(self):
+        return len(self._arrow_struct)
+
+    def __iter__(self):
+        return iter(self._field_names)
+
+    def __contains__(self, key):
+        return key in self._name_to_idx
+
+    def __getitem__(self, key):
+        import pandas as pd
+
+        # Single column by name
+        if isinstance(key, str):
+            if key not in self._name_to_idx:
+                raise KeyError(key)
+            idx = self._name_to_idx[key]
+            return self._convert_column(idx).rename(key)
+
+        # Multiple columns by list of names
+        if isinstance(key, list):
+            if all(isinstance(k, str) for k in key):
+                series_list = []
+                for k in key:
+                    if k not in self._name_to_idx:
+                        raise KeyError(k)
+                    idx = self._name_to_idx[k]
+                    series_list.append(self._convert_column(idx).rename(k))
+                return pd.concat(series_list, axis=1)
+
+        # For other cases (slicing, boolean indexing, etc.), materialize
+        return self._materialize()[key]
+
+    def __getattr__(self, name):
+        # Delegate unknown attributes to materialized DataFrame
+        return getattr(self._materialize(), name)
+
+    def __repr__(self):
+        return f"LazyArrowDataFrame(columns={self._field_names}, shape={self.shape})"
+
+    def to_pandas(self):
+        """Explicitly convert to pandas DataFrame."""
+        return self._materialize()
+
+
 class ArrowCollectSerializer(Serializer):
     """
     Deserialize a stream of batches followed by batch order information. Used in
@@ -531,6 +651,7 @@ class ArrowStreamPandasUDFSerializer(ArrowStreamPandasSerializer):
         arrow_cast=False,
         input_types=None,
         int_to_decimal_coercion_enabled=False,
+        lazy_struct_conversion=False,
     ):
         super().__init__(timezone, safecheck, int_to_decimal_coercion_enabled)
         self._assign_cols_by_name = assign_cols_by_name
@@ -539,6 +660,7 @@ class ArrowStreamPandasUDFSerializer(ArrowStreamPandasSerializer):
         self._ndarray_as_list = ndarray_as_list
         self._arrow_cast = arrow_cast
         self._input_types = input_types
+        self._lazy_struct_conversion = lazy_struct_conversion
 
     def arrow_to_pandas(self, arrow_column, idx):
         import pyarrow.types as types
@@ -551,10 +673,30 @@ class ArrowStreamPandasUDFSerializer(ArrowStreamPandasSerializer):
             and types.is_struct(arrow_column.type)
             and not is_variant(arrow_column.type)
         ):
+            field_names = [field.name for field in arrow_column.type]
+
+            # Use lazy conversion if enabled - defer Arrow-to-Pandas until columns are accessed
+            if self._lazy_struct_conversion:
+
+                def converter(col, i):
+                    return super(ArrowStreamPandasUDFSerializer, self).arrow_to_pandas(
+                        col,
+                        i,
+                        self._struct_in_pandas,
+                        self._ndarray_as_list,
+                        spark_type=(
+                            self._input_types[idx][i].dataType
+                            if self._input_types is not None
+                            else None
+                        ),
+                    )
+
+                return LazyArrowDataFrame(arrow_column, converter, field_names)
+
+            # Eager conversion (original behavior)
             import pandas as pd
 
             series = [
-                # Need to be explicit here because it's in a comprehension
                 super(ArrowStreamPandasUDFSerializer, self)
                 .arrow_to_pandas(
                     column,
