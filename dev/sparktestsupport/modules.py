@@ -789,8 +789,8 @@ pyspark_install = Module(
     source_file_regexes=[
         "python/pyspark/install.py",
         "python/pyspark/tests/test_install_spark.py",
-        "python/pyproject.toml",
-        "python/build_backend.py",
+        "pyproject.toml",
+        "build_backend.py",
     ],
     python_test_goals=[
         "pyspark.tests.test_install_spark",

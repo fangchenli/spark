@@ -17,6 +17,9 @@
 # Reference: https://setuptools.pypa.io/en/latest/userguide/miscellaneous.html
 
 recursive-include python/pyspark *.pyi py.typed *.json
+
+# python/deps/ is a temporary directory created by build_backend.py during build.
+# It contains symlinks to JARs, scripts, and data files from the Spark source tree.
 recursive-include python/deps/jars *.jar
 graft python/deps/bin
 recursive-include python/deps/sbin spark-config.sh spark-daemon.sh start-history-server.sh stop-history-server.sh
