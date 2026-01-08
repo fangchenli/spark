@@ -37,8 +37,11 @@ from setuptools.build_meta import (
 )
 
 # --- Config ---
-TEMP_PATH = Path("deps")
-SPARK_HOME = Path(__file__).parent.parent.resolve()
+# pyproject.toml and build_backend.py are at project root
+# When build frontend runs, CWD is the project root
+PYTHON_DIR = Path("python")
+TEMP_PATH = PYTHON_DIR / "deps"
+SPARK_HOME = Path.cwd()
 
 JARS_TARGET = TEMP_PATH / "jars"
 SCRIPTS_TARGET = TEMP_PATH / "bin"
@@ -92,7 +95,7 @@ def _find_jars_path():
 
 
 def _create_symlink_farm():
-    """Create symlinks to Spark resources in deps/ directory."""
+    """Create symlinks to Spark resources in python/deps/ directory."""
     # If deps already exists, assume it was created by an earlier hook
     if TEMP_PATH.exists():
         return
@@ -146,10 +149,10 @@ def _cleanup_symlink_farm():
 
 
 def _copy_shell_script():
-    """Copy shell.py to pyspark/python/pyspark for launcher scripts."""
-    target_dir = Path("pyspark/python/pyspark")
+    """Copy shell.py to python/pyspark/python/pyspark for launcher scripts."""
+    target_dir = PYTHON_DIR / "pyspark/python/pyspark"
     target_dir.mkdir(parents=True, exist_ok=True)
-    copyfile("pyspark/shell.py", target_dir / "shell.py")
+    copyfile(PYTHON_DIR / "pyspark/shell.py", target_dir / "shell.py")
 
 
 # --- PEP 517 Hook Overrides ---

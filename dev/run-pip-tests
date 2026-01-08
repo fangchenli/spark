@@ -69,12 +69,12 @@ fi
 
 # Determine which version of PySpark we are building for archive name
 PYSPARK_VERSION=$(python3 -c "exec(open('python/pyspark/version.py').read());print(__version__)")
-PYSPARK_DIST="$FWDIR/python/dist/pyspark-$PYSPARK_VERSION.tar.gz"
+PYSPARK_DIST="$FWDIR/dist/pyspark-$PYSPARK_VERSION.tar.gz"
 # The pip install options we use for all the pip commands
 PIP_OPTIONS="--upgrade --no-cache-dir --force-reinstall --use-pep517"
 # Test both regular user and edit/dev install modes.
 PIP_COMMANDS=("pip install $PIP_OPTIONS $PYSPARK_DIST"
-	      "pip install $PIP_OPTIONS -e python")
+	      "pip install $PIP_OPTIONS -e .")
 
 # Jenkins has PySpark installed under user sitepackages shared for some reasons.
 # In this test, explicitly exclude user sitepackages to prevent side effects
@@ -101,12 +101,11 @@ for python in "${PYTHON_EXECS[@]}"; do
     fi
 
     echo "Creating pip installable source dist"
-    cd "$FWDIR"/python
+    cd "$FWDIR"
     # Delete the egg info file if it exists, this can cache the setup file.
-    rm -rf pyspark.egg-info || echo "No existing egg info file, skipping deletion"
+    rm -rf python/pyspark.egg-info || echo "No existing egg info file, skipping deletion"
     pip install build
     python3 -m build --sdist
-
 
     echo "Installing dist into virtual env"
     cd dist
