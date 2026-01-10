@@ -65,7 +65,9 @@ def _supports_symlinks():
 
 def _is_in_spark_source():
     """Check if we're building from within Spark source tree."""
-    return (SPARK_HOME / "core/src/main/scala/org/apache/spark/SparkContext.scala").is_file() or (
+    return (
+        SPARK_HOME / "core/src/main/scala/org/apache/spark/SparkContext.scala"
+    ).is_file() or (
         (SPARK_HOME / "RELEASE").is_file()
         and list((SPARK_HOME / "jars").glob("spark*core*.jar"))
     )
@@ -84,7 +86,9 @@ def _find_jars_path():
         )
 
     # Check for release mode (jars/)
-    if (SPARK_HOME / "RELEASE").is_file() and list((SPARK_HOME / "jars").glob("spark*core*.jar")):
+    if (SPARK_HOME / "RELEASE").is_file() and list(
+        (SPARK_HOME / "jars").glob("spark*core*.jar")
+    ):
         return SPARK_HOME / "jars"
 
     raise RuntimeError(
