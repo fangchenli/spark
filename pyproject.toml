@@ -341,6 +341,7 @@ module = [
     "scipy.*",
     "pyarrow.*",
     "psutil.*",
+    "pystack.*",
     "matplotlib.*",
     "plotly.*",
     "mlflow.*",
@@ -351,6 +352,8 @@ module = [
     "memory_profiler.*",
     "flameprof.*",
     "yaml.*",
+    "ipykernel.*",
+    "IPython.*",
 ]
 ignore_missing_imports = true
 

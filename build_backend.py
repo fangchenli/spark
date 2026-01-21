@@ -30,10 +30,13 @@ from shutil import copyfile, copytree, rmtree
 from setuptools.build_meta import *  # noqa: F401, F403
 from setuptools.build_meta import build_wheel as _orig_build_wheel
 from setuptools.build_meta import build_sdist as _orig_build_sdist
+from setuptools.build_meta import build_editable as _orig_build_editable
 from setuptools.build_meta import (
     get_requires_for_build_wheel as _orig_get_requires_for_build_wheel,
     get_requires_for_build_sdist as _orig_get_requires_for_build_sdist,
+    get_requires_for_build_editable as _orig_get_requires_for_build_editable,
     prepare_metadata_for_build_wheel as _orig_prepare_metadata_for_build_wheel,
+    prepare_metadata_for_build_editable as _orig_prepare_metadata_for_build_editable,
 )
 
 # --- Config ---
@@ -212,3 +215,33 @@ def get_requires_for_build_sdist(config_settings=None):
         _create_symlink_farm()
     _copy_shell_script()
     return _orig_get_requires_for_build_sdist(config_settings)
+
+
+def build_editable(wheel_directory, config_settings=None, metadata_directory=None):
+    """Build an editable wheel, creating symlink farm first if in Spark source tree."""
+    in_spark = _is_in_spark_source()
+
+    try:
+        if in_spark:
+            _create_symlink_farm()
+        _copy_shell_script()
+        return _orig_build_editable(wheel_directory, config_settings, metadata_directory)
+    finally:
+        if in_spark:
+            _cleanup_symlink_farm()
+
+
+def get_requires_for_build_editable(config_settings=None):
+    """Get editable build requirements, creating symlink farm first if needed."""
+    if _is_in_spark_source():
+        _create_symlink_farm()
+    _copy_shell_script()
+    return _orig_get_requires_for_build_editable(config_settings)
+
+
+def prepare_metadata_for_build_editable(metadata_directory, config_settings=None):
+    """Prepare editable wheel metadata, creating symlink farm first if needed."""
+    if _is_in_spark_source():
+        _create_symlink_farm()
+    _copy_shell_script()
+    return _orig_prepare_metadata_for_build_editable(metadata_directory, config_settings)

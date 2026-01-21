@@ -17,127 +17,134 @@
 # limitations under the License.
 #
 
-# Stop on error
+# Script to test pip installation of PySpark.
+# Tests both sdist install and editable install modes.
+
 set -e
-# Set nullglob for when we are checking existence based on globs
 shopt -s nullglob
 
 FWDIR="$(cd "$(dirname "$0")"/..; pwd)"
 cd "$FWDIR"
 
-# Clean ignored/untracked files that do not need
-# for pip packaging test. Machines in GitHub Action do not have
-# enough space, see also SPARK-44557.
-# We need to keep the coverage and test report from previous tests in coverage runs.
-if [[ ! -z "${GITHUB_ACTIONS}" ]]; then
+# Clean up disk space on GitHub Actions (see SPARK-44557)
+if [[ -n "${GITHUB_ACTIONS}" ]]; then
   git clean -d -f -x -e assembly -e python/coverage.xml -e target/test-reports/
 fi
 
-echo "Constructing virtual env for testing"
-VIRTUALENV_BASE=$(mktemp -d)
-
-# Clean up the virtual env environment used if we created one.
-function delete_virtualenv() {
-  echo "Cleaning up temporary directory - $VIRTUALENV_BASE"
-  rm -rf "$VIRTUALENV_BASE"
-}
-trap delete_virtualenv EXIT
-
-PYTHON_EXECS=()
-# Some systems don't have pip or virtualenv - in those cases our tests won't work.
-if hash virtualenv 2>/dev/null && [ ! -n "$USE_CONDA" ]; then
-  echo "virtualenv installed - using. Note if this is a conda virtual env you may wish to set USE_CONDA"
-  # test only against python3
-  if hash python3 2>/dev/null; then
-    PYTHON_EXECS=('python3')
-  else
-    echo "Python3 not installed on system, skipping pip installability tests"
-    exit 0
-  fi
-elif hash conda 2>/dev/null; then
-  echo "Using conda virtual environments"
-  PYTHON_EXECS=('3.10')
-  USE_CONDA=1
-else
-  echo "Missing virtualenv & conda, skipping pip installability tests"
-  exit 0
-fi
+# Check for required tools
 if ! hash pip 2>/dev/null; then
   echo "Missing pip, skipping pip installability tests."
   exit 0
 fi
 
-# Determine which version of PySpark we are building for archive name
-PYSPARK_VERSION=$(python3 -c "exec(open('python/pyspark/version.py').read());print(__version__)")
-PYSPARK_DIST="$FWDIR/dist/pyspark-$PYSPARK_VERSION.tar.gz"
-# The pip install options we use for all the pip commands
-PIP_OPTIONS="--upgrade --no-cache-dir --force-reinstall --use-pep517"
-# Test both regular user and edit/dev install modes.
-PIP_COMMANDS=("pip install $PIP_OPTIONS $PYSPARK_DIST"
-	      "pip install $PIP_OPTIONS -e .")
+if ! hash python3 2>/dev/null; then
+  echo "Python3 not installed, skipping pip installability tests."
+  exit 0
+fi
 
-# Jenkins has PySpark installed under user sitepackages shared for some reasons.
-# In this test, explicitly exclude user sitepackages to prevent side effects
+# Determine virtualenv tool (prefer venv, then virtualenv, then conda)
+if python3 -c "import venv" 2>/dev/null && [[ -z "$USE_CONDA" ]]; then
+  VENV_TOOL="venv"
+elif hash virtualenv 2>/dev/null && [[ -z "$USE_CONDA" ]]; then
+  VENV_TOOL="virtualenv"
+elif hash conda 2>/dev/null; then
+  VENV_TOOL="conda"
+  USE_CONDA=1
+else
+  echo "Missing venv, virtualenv & conda, skipping pip installability tests."
+  exit 0
+fi
+
+# Exclude user site-packages to prevent side effects
 export PYTHONNOUSERSITE=1
 
-for python in "${PYTHON_EXECS[@]}"; do
-  for install_command in "${PIP_COMMANDS[@]}"; do
-    echo "Testing pip installation with python $python"
-    # Create a temp directory for us to work in and save its name to a file for cleanup
-    echo "Using $VIRTUALENV_BASE for virtualenv"
-    VIRTUALENV_PATH="$VIRTUALENV_BASE"/$python
-    rm -rf "$VIRTUALENV_PATH"
-    if [ -n "$USE_CONDA" ]; then
-      conda create -y -p "$VIRTUALENV_PATH" python=$python numpy pandas pip setuptools
-      source activate "$VIRTUALENV_PATH" || conda activate "$VIRTUALENV_PATH"
-    else
-      mkdir -p "$VIRTUALENV_PATH"
-      virtualenv --python=$python "$VIRTUALENV_PATH"
-      source "$VIRTUALENV_PATH"/bin/activate
-    fi
-    # Upgrade pip & friends if using virtual env
-    if [ ! -n "$USE_CONDA" ]; then
-      pip install --upgrade pip wheel numpy
-    fi
+# Create temp directory for virtual environments
+VIRTUALENV_BASE=$(mktemp -d)
+trap "echo 'Cleaning up $VIRTUALENV_BASE'; rm -rf '$VIRTUALENV_BASE'" EXIT
 
-    echo "Creating pip installable source dist"
-    cd "$FWDIR"
-    # Delete the egg info file if it exists, this can cache the setup file.
-    rm -rf python/pyspark.egg-info || echo "No existing egg info file, skipping deletion"
-    pip install build
-    python3 -m build --sdist
+# Get PySpark version
+PYSPARK_VERSION=$(python3 -c "exec(open('python/pyspark/version.py').read());print(__version__)")
+PYSPARK_DIST="$FWDIR/dist/pyspark-$PYSPARK_VERSION.tar.gz"
 
-    echo "Installing dist into virtual env"
-    cd dist
-    # Verify that the dist directory only contains one thing to install
-    sdists=(*.tar.gz)
-    if [ ${#sdists[@]} -ne 1 ]; then
-      echo "Unexpected number of targets found in dist directory - please cleanup existing sdists first."
-      exit -1
-    fi
-    # Do the actual installation
-    cd "$FWDIR"
-    $install_command
+# Build sdist in a temporary venv to avoid system package issues
+echo "Building PySpark sdist..."
+rm -rf python/pyspark.egg-info dist/pyspark-*.tar.gz 2>/dev/null || true
+BUILD_VENV="$VIRTUALENV_BASE/build"
+python3 -m venv "$BUILD_VENV"
+source "$BUILD_VENV/bin/activate"
+pip install --quiet --upgrade pip build
+python3 -m build --sdist
+deactivate
 
-    cd /
+# Verify sdist was created
+if [[ ! -f "$PYSPARK_DIST" ]]; then
+  echo "Failed to create sdist at $PYSPARK_DIST"
+  exit 1
+fi
 
-    echo "Run basic sanity check on pip installed version with spark-submit"
-    spark-submit "$FWDIR"/dev/pip-sanity-check.py
-    echo "Run basic sanity check with import based"
-    python3 "$FWDIR"/dev/pip-sanity-check.py
-    echo "Run the tests for context.py"
-    python3 "$FWDIR"/python/pyspark/core/context.py
+PIP_OPTIONS="--upgrade --no-cache-dir --force-reinstall"
 
-    cd "$FWDIR"
+# Test function to run sanity checks
+run_sanity_checks() {
+  echo "Running sanity checks..."
+  # Test with spark-submit
+  spark-submit "$FWDIR/dev/pip-sanity-check.py"
+  # Test with direct python import
+  python3 "$FWDIR/dev/pip-sanity-check.py"
+  # Test context.py
+  python3 "$FWDIR/python/pyspark/core/context.py"
+}
 
-    # conda / virtualenv environments need to be deactivated differently
-    if [ -n "$USE_CONDA" ]; then
-      source deactivate || conda deactivate
-    else
-      deactivate
-    fi
+# Test function for a single install mode
+test_install() {
+  local install_mode=$1
+  local venv_path="$VIRTUALENV_BASE/$install_mode"
 
-  done
-done
+  echo ""
+  echo "=============================================="
+  echo "Testing: $install_mode install"
+  echo "=============================================="
 
+  # Create and activate virtual environment
+  rm -rf "$venv_path"
+  if [[ "$VENV_TOOL" == "conda" ]]; then
+    conda create -y -p "$venv_path" python=3.10 numpy pandas pip setuptools
+    source activate "$venv_path" || conda activate "$venv_path"
+  elif [[ "$VENV_TOOL" == "venv" ]]; then
+    python3 -m venv "$venv_path"
+    source "$venv_path/bin/activate"
+    pip install --quiet --upgrade pip wheel numpy
+  else
+    virtualenv --python=python3 "$venv_path"
+    source "$venv_path/bin/activate"
+    pip install --quiet --upgrade pip wheel numpy
+  fi
+
+  # Install PySpark
+  cd "$FWDIR"
+  if [[ "$install_mode" == "sdist" ]]; then
+    pip install $PIP_OPTIONS "$PYSPARK_DIST"
+  else
+    pip install $PIP_OPTIONS -e .
+  fi
+
+  # Run tests from a neutral directory
+  cd /
+  run_sanity_checks
+  cd "$FWDIR"
+
+  # Deactivate
+  if [[ "$VENV_TOOL" == "conda" ]]; then
+    source deactivate 2>/dev/null || conda deactivate
+  else
+    deactivate
+  fi
+}
+
+# Run tests for both install modes
+test_install "sdist"
+test_install "editable"
+
+echo ""
+echo "All pip installation tests passed!"
 exit 0
