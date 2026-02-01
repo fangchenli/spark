@@ -1352,6 +1352,7 @@ lazy val assembly = (project in file("assembly"))
     protobuf % Provided
   )
   .settings(sparkModuleSettings)
+  .settings(Shading.mainAssemblySettings)
   .settings(
     name := "spark-assembly",
     publish / skip := true,
@@ -1371,6 +1372,7 @@ lazy val kafkaAssembly = (project in file("connector/kafka-0-10-assembly"))
     streaming % Provided
   )
   .settings(sparkModuleSettings)
+  .settings(Shading.connectorAssemblySettings)
   .settings(
     name := "spark-streaming-kafka-0-10-assembly",
     publish / skip := true,
@@ -1404,6 +1406,7 @@ lazy val kinesisAslAssembly = (project in file("connector/kinesis-asl-assembly")
     streaming % Provided
   )
   .settings(sparkModuleSettings)
+  .settings(Shading.connectorAssemblySettings)
   .settings(
     name := "spark-streaming-kinesis-asl-assembly",
     publish / skip := true,

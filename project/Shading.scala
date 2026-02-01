@@ -30,17 +30,24 @@ object Shading {
   // Package name for relocated/shaded classes
   val sparkShadePackage = "org.sparkproject"
 
-  // Merge strategy for assembly
-  lazy val coreMergeStrategy: String => sbtassembly.MergeStrategy = {
+  // Base merge strategy for assembly
+  lazy val baseMergeStrategy: String => sbtassembly.MergeStrategy = {
     case m if m.toLowerCase(Locale.ROOT).endsWith("manifest.mf") => MergeStrategy.discard
     case m if m.toLowerCase(Locale.ROOT).matches("meta-inf.*\\.sf$") => MergeStrategy.discard
     case m if m.toLowerCase(Locale.ROOT).startsWith("meta-inf/services/") => MergeStrategy.filterDistinctLines
     case m if m.toLowerCase(Locale.ROOT).endsWith(".proto") => MergeStrategy.discard
+    case m if m.toLowerCase(Locale.ROOT).endsWith("module-info.class") => MergeStrategy.discard
     case "log4j2.properties" => MergeStrategy.discard
     case "reference.conf" => MergeStrategy.concat
     case "git.properties" => MergeStrategy.discard
+    case "META-INF/io.netty.versions.properties" => MergeStrategy.first
+    case m if m.endsWith("Log4j2Plugins.dat") => MergeStrategy.first
+    case m if m.endsWith("collect.pro") => MergeStrategy.first
     case _ => MergeStrategy.first
   }
+
+  // Merge strategy for core assembly (backward compatibility)
+  lazy val coreMergeStrategy: String => sbtassembly.MergeStrategy = baseMergeStrategy
 
   lazy val coreAssemblySettings: Seq[Setting[_]] = Seq(
     assembly / assemblyMergeStrategy := coreMergeStrategy,
@@ -68,4 +75,40 @@ object Shading {
     assembly / assemblyMergeStrategy := coreMergeStrategy,
     assembly / assemblyOption := (assembly / assemblyOption).value.withIncludeScala(false)
   )
+
+  // Generic assembly settings for connector assemblies (kafka, kinesis, etc.)
+  lazy val connectorAssemblySettings: Seq[Setting[_]] = Seq(
+    assembly / assemblyMergeStrategy := baseMergeStrategy,
+    assembly / assemblyOption := (assembly / assemblyOption).value.withIncludeScala(false)
+  )
+
+  // Main assembly module settings - exclude connect-shims stub classes
+  lazy val mainAssemblySettings: Seq[Setting[_]] = Seq(
+    assembly / assemblyMergeStrategy := {
+      // Exclude connect-shims stub classes - they conflict with real implementations
+      case m if m.startsWith("org/apache/spark/") && isConnectShimsClass(m) => MergeStrategy.discard
+      case m => baseMergeStrategy(m)
+    },
+    assembly / assemblyOption := (assembly / assemblyOption).value.withIncludeScala(false),
+    // Exclude the connect-shims jar entirely from assembly
+    assembly / assemblyExcludedJars := {
+      val cp = (assembly / fullClasspath).value
+      cp.filter(_.data.getName.contains("connect-shims"))
+    }
+  )
+
+  // Classes that are stubs in connect-shims and should be excluded from main assembly
+  private def isConnectShimsClass(path: String): Boolean = {
+    val shimClasses = Set(
+      "org/apache/spark/SparkConf",
+      "org/apache/spark/SparkContext",
+      "org/apache/spark/sql/sources/BaseRelation",
+      "org/apache/spark/sql/util/ExecutionListenerManager",
+      "org/apache/spark/sql/SparkSessionExtensions",
+      "org/apache/spark/sql/catalyst/analysis/Analyzer",
+      "org/apache/spark/sql/execution/QueryExecution",
+      "org/apache/spark/sql/internal/SessionState"
+    )
+    shimClasses.exists(c => path.startsWith(c))
+  }
 }
