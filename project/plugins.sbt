@@ -15,36 +15,62 @@
  * limitations under the License.
  */
 
-addSbtPlugin("software.purpledragon" % "sbt-checkstyle-plugin" % "4.0.1")
+// Load versions from versions.properties - single source of truth
+val pluginVersions: Map[String, String] = {
+  val props = new java.util.Properties()
+  val propsFile = new java.io.File("versions.properties")
+  if (propsFile.exists()) {
+    val in = new java.io.FileInputStream(propsFile)
+    try {
+      props.load(in)
+    } finally {
+      in.close()
+    }
+  } else {
+    throw new RuntimeException(
+      s"versions.properties not found at ${propsFile.getAbsolutePath}. " +
+      "This file is required for the SBT build.")
+  }
+  import scala.jdk.CollectionConverters._
+  props.asScala.toMap
+}
+
+def getVersion(key: String): String = {
+  pluginVersions.getOrElse(key,
+    throw new RuntimeException(s"Property '$key' not found in versions.properties"))
+}
+
+addSbtPlugin("software.purpledragon" % "sbt-checkstyle-plugin" % getVersion("sbt.checkstyle.version"))
 
 // If you are changing the dependency setting for checkstyle plugin,
 // please check pom.xml in the root of the source tree too.
-libraryDependencies += "com.puppycrawl.tools" % "checkstyle" % "11.0.1"
+libraryDependencies += "com.puppycrawl.tools" % "checkstyle" % getVersion("checkstyle.version")
 
-addSbtPlugin("com.eed3si9n" % "sbt-assembly" % "2.3.1")
+addSbtPlugin("com.eed3si9n" % "sbt-assembly" % getVersion("sbt.assembly.version"))
 
-addSbtPlugin("com.github.sbt" % "sbt-eclipse" % "6.2.0")
+addSbtPlugin("com.github.sbt" % "sbt-eclipse" % getVersion("sbt.eclipse.version"))
 
-addSbtPlugin("org.scalastyle" %% "scalastyle-sbt-plugin" % "1.0.0")
+addSbtPlugin("org.scalastyle" %% "scalastyle-sbt-plugin" % getVersion("scalastyle.sbt.version"))
 
-addSbtPlugin("com.typesafe" % "sbt-mima-plugin" % "1.1.4")
+addSbtPlugin("com.typesafe" % "sbt-mima-plugin" % getVersion("sbt.mima.version"))
 
-addSbtPlugin("com.github.sbt" % "sbt-unidoc" % "0.5.0")
+addSbtPlugin("com.github.sbt" % "sbt-unidoc" % getVersion("sbt.unidoc.version"))
 
-addSbtPlugin("io.spray" % "sbt-revolver" % "0.10.0")
+addSbtPlugin("io.spray" % "sbt-revolver" % getVersion("sbt.revolver.version"))
 
-libraryDependencies += "org.ow2.asm"  % "asm" % "9.9.1"
+libraryDependencies += "org.ow2.asm"  % "asm" % getVersion("asm.version")
 
-libraryDependencies += "org.ow2.asm"  % "asm-commons" % "9.9.1"
+libraryDependencies += "org.ow2.asm"  % "asm-commons" % getVersion("asm.version")
 
-addSbtPlugin("com.simplytyped" % "sbt-antlr4" % "0.8.3")
+addSbtPlugin("com.simplytyped" % "sbt-antlr4" % getVersion("sbt.antlr4.version"))
 
-addSbtPlugin("com.github.sbt" % "sbt-pom-reader" % "2.5.0")
+// sbt-pom-reader removed - using native SBT build configuration
+// addSbtPlugin("com.github.sbt" % "sbt-pom-reader" % "2.5.0")
 
-addSbtPlugin("com.github.sbt.junit" % "sbt-jupiter-interface" % "0.17.0")
+addSbtPlugin("com.github.sbt.junit" % "sbt-jupiter-interface" % getVersion("sbt.jupiter.interface.version"))
 
-addSbtPlugin("com.thesamet" % "sbt-protoc" % "1.0.7")
+addSbtPlugin("com.thesamet" % "sbt-protoc" % getVersion("sbt.protoc.version"))
 
-addSbtPlugin("com.here.platform" % "sbt-bom" % "1.0.29")
+addSbtPlugin("com.here.platform" % "sbt-bom" % getVersion("sbt.bom.version"))
 
-addSbtPlugin("ch.epfl.scala" % "sbt-bloop" % "2.0.17")
+addSbtPlugin("ch.epfl.scala" % "sbt-bloop" % getVersion("sbt.bloop.version"))

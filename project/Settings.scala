@@ -1,0 +1,249 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+import sbt._
+import sbt.Keys._
+import scala.util.Properties
+
+/**
+ * Shared settings for native SBT build.
+ */
+object Settings {
+
+  val sparkHome: File = file(".").getAbsoluteFile.getParentFile
+  val testTempDir: String = s"$sparkHome/target/tmp"
+
+  // ===== RESOLVER SETTINGS =====
+  lazy val resolverSettings: Seq[Setting[_]] = Seq(
+    resolvers ++= Seq(
+      "gcs-maven-central-mirror" at "https://maven-central.storage-download.googleapis.com/maven2/",
+      "jitpack" at "https://jitpack.io",
+      Resolver.mavenLocal
+    )
+  )
+
+  // ===== SCALA COMPILER SETTINGS =====
+  // Note: -release flag requires JDK 17+ to be running sbt
+  lazy val scalaCompilerSettings: Seq[Setting[_]] = Seq(
+    scalacOptions ++= {
+      val baseOpts = Seq(
+        "-unchecked",
+        "-deprecation",
+        "-feature",
+        "-explaintypes",
+        // Treat warnings as errors, except deprecation
+        "-Wconf:any:e",
+        "-Wconf:cat=deprecation:wv",
+        // Unused imports
+        "-Wunused:imports",
+        // Scaladoc warnings as verbose
+        "-Wconf:cat=scaladoc:wv",
+        // Various deprecation handling
+        "-Wconf:cat=deprecation&origin=scala\\..*\\.CanBuildFrom:wv",
+        "-Wconf:cat=deprecation&origin=scala\\.package\\|(deprecatedName|deprecatedOverriding):wv",
+        "-Wconf:cat=deprecation&origin=scala\\.math\\.Numeric\\.signum:wv",
+        "-Wconf:cat=deprecation&origin=org\\.apache\\.spark\\.SparkThrowable\\.getErrorClass:wv",
+        "-Wconf:cat=deprecation&origin=org\\.apache\\.spark\\.sql\\.SparkGetErrorClassMessage\\.getSparkErrorMessage:wv",
+        // Auto-application deprecation
+        "-Wconf:msg=Auto-application:e",
+        // Procedure syntax deprecation
+        "-Wconf:cat=deprecation&msg=procedure syntax is deprecated:e",
+        // Symbol literal deprecation
+        "-Wconf:cat=deprecation&msg=symbol literal is deprecated:e"
+      )
+      // Add -release flag only if running on JDK 9+
+      val javaVersionStr = sys.props("java.specification.version")
+      val javaVersion = if (javaVersionStr.startsWith("1.")) javaVersionStr.drop(2).toInt else javaVersionStr.toInt
+      if (javaVersion >= 9) baseOpts ++ Seq("-release", Versions.java)
+      else baseOpts ++ Seq("-target:jvm-1.8")
+    },
+    // Source path for scaladoc
+    Compile / scalacOptions ++= Seq(
+      s"-sourcepath:${baseDirectory.value.getAbsolutePath}"
+    )
+  )
+
+  // ===== JAVA COMPILER SETTINGS =====
+  // Note: --release flag requires JDK 9+ to be running sbt
+  lazy val javaCompilerSettings: Seq[Setting[_]] = Seq(
+    javacOptions ++= {
+      val baseOpts = Seq(
+        "-encoding", "UTF-8",
+        "-g"
+      )
+      val javaVersionStr = sys.props("java.specification.version")
+      val javaVersion = if (javaVersionStr.startsWith("1.")) javaVersionStr.drop(2).toInt else javaVersionStr.toInt
+      if (javaVersion >= 9) baseOpts ++ Seq("-proc:full", s"--release=${Versions.java}")
+      else baseOpts ++ Seq("-source", "1.8", "-target", "1.8")
+    },
+    Compile / javacOptions ++= Seq("-Xlint:unchecked"),
+    Compile / doc / javacOptions ++= Seq(
+      "-Xdoclint:all",
+      "-Xdoclint:-missing"
+    )
+  )
+
+  // ===== TEST JVM OPTIONS =====
+  val extraTestJavaArgs: Seq[String] = Seq(
+    "-XX:+IgnoreUnrecognizedVMOptions",
+    "--add-modules=jdk.incubator.vector",
+    "--add-opens=java.base/java.lang=ALL-UNNAMED",
+    "--add-opens=java.base/java.lang.invoke=ALL-UNNAMED",
+    "--add-opens=java.base/java.lang.reflect=ALL-UNNAMED",
+    "--add-opens=java.base/java.io=ALL-UNNAMED",
+    "--add-opens=java.base/java.net=ALL-UNNAMED",
+    "--add-opens=java.base/java.nio=ALL-UNNAMED",
+    "--add-opens=java.base/java.util=ALL-UNNAMED",
+    "--add-opens=java.base/java.util.concurrent=ALL-UNNAMED",
+    "--add-opens=java.base/java.util.concurrent.atomic=ALL-UNNAMED",
+    "--add-opens=java.base/jdk.internal.ref=ALL-UNNAMED",
+    "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED",
+    "--add-opens=java.base/sun.nio.cs=ALL-UNNAMED",
+    "--add-opens=java.base/sun.security.action=ALL-UNNAMED",
+    "--add-opens=java.base/sun.util.calendar=ALL-UNNAMED",
+    "-Djdk.reflect.useDirectMethodHandle=false",
+    "-Dio.netty.tryReflectionSetAccessible=true",
+    "-Dio.netty.allocator.type=pooled",
+    "-Dio.netty.handler.ssl.defaultEndpointVerificationAlgorithm=NONE",
+    "--enable-native-access=ALL-UNNAMED"
+  )
+
+  // Default excluded test tags
+  val defaultExcludedTags: Seq[String] = Seq(
+    "org.apache.spark.tags.ChromeUITest",
+    "org.apache.spark.deploy.k8s.integrationtest.YuniKornTag",
+    "org.apache.spark.internal.io.cloud.IntegrationTestSuite"
+  )
+
+  // ===== TEST SETTINGS =====
+  lazy val testSettings: Seq[Setting[_]] = Seq(
+    // Fork tests to separate JVM
+    Test / fork := true,
+
+    // Create temp directory for tests
+    Test / testOptions += Tests.Setup { () =>
+      val tmpDir = new java.io.File(testTempDir)
+      if (!tmpDir.exists()) tmpDir.mkdirs()
+    },
+
+    // Test environment variables
+    Test / envVars ++= {
+      val baseEnvVars = Map(
+        "SPARK_DIST_CLASSPATH" -> (Test / fullClasspath).value.files.map(_.getAbsolutePath)
+          .mkString(java.io.File.pathSeparator),
+        "SPARK_PREPEND_CLASSES" -> "1",
+        "SPARK_SCALA_VERSION" -> Versions.scalaBinary,
+        "SPARK_TESTING" -> "1",
+        "JAVA_HOME" -> sys.env.getOrElse("JAVA_HOME", sys.props("java.home"))
+      )
+      // macOS specific
+      if (sys.props("os.name").contains("Mac OS X")) {
+        baseEnvVars + ("OBJC_DISABLE_INITIALIZE_FORK_SAFETY" -> "YES")
+      } else {
+        baseEnvVars
+      }
+    },
+
+    // Test JVM options
+    Test / javaOptions ++= {
+      val heapSize = sys.env.getOrElse("HEAP_SIZE", "4g")
+      val metaspaceSize = sys.env.getOrElse("METASPACE_SIZE", "1300m")
+      Seq(
+        s"-Xmx$heapSize",
+        "-Xss4m",
+        s"-XX:MaxMetaspaceSize=$metaspaceSize",
+        "-XX:ReservedCodeCacheSize=128m",
+        s"-Djava.io.tmpdir=$testTempDir",
+        s"-Dspark.test.home=$sparkHome",
+        "-Dspark.testing=1",
+        "-Dspark.port.maxRetries=100",
+        "-Dspark.master.rest.enabled=false",
+        "-Dspark.memory.debugFill=true",
+        "-Dspark.ui.enabled=false",
+        "-Dspark.ui.showConsoleProgress=false",
+        "-Dspark.unsafe.exceptionOnMemoryLeak=true",
+        "-Dspark.hadoop.hadoop.caller.context.enabled=true",
+        "-Dspark.driver.host=127.0.0.1",
+        "-Dspark.driver.bindAddress=127.0.0.1",
+        "-Dhive.conf.validation=false",
+        "-Dsun.io.serialization.extendedDebugInfo=false",
+        "-Dderby.system.durability=test",
+        "-Dfile.encoding=UTF-8",
+        "-ea"
+      ) ++ extraTestJavaArgs
+    },
+
+    // Test output options
+    Test / testOptions += Tests.Argument(TestFrameworks.ScalaTest, "-oDF"),
+    // Slowpoke notifications
+    Test / testOptions += Tests.Argument(TestFrameworks.ScalaTest, "-W", "120", "300"),
+
+    // JUnit interface
+    libraryDependencies += Dependencies.TestDeps.jupiterInterface % Test
+  )
+
+  // ===== PUBLISHING SETTINGS =====
+  lazy val publishSettings: Seq[Setting[_]] = Seq(
+    publishMavenStyle := true,
+    publish / skip := false
+  )
+
+  // ===== COMMON SETTINGS =====
+  lazy val commonSettings: Seq[Setting[_]] =
+    resolverSettings ++
+    scalaCompilerSettings ++
+    javaCompilerSettings ++
+    publishSettings ++
+    Seq(
+      organization := "org.apache.spark",
+      version := Versions.spark,
+      scalaVersion := Versions.scala,
+
+      // Export jars for compile, not for test
+      Compile / exportJars := true,
+      Test / exportJars := false,
+
+      // Java home
+      javaHome := {
+        val envJavaHome = sys.env.get("JAVA_HOME")
+        val propsJavaHome = sys.props.get("java.home")
+        envJavaHome.orElse(propsJavaHome).map(file)
+      },
+
+      // Dependency exclusions applied to all projects
+      excludeDependencies ++= Seq(
+        ExclusionRule(organization = "org.codehaus.groovy", name = "groovy-all"),
+        ExclusionRule(organization = "ch.qos.logback"),
+        ExclusionRule(organization = "org.slf4j", name = "slf4j-simple")
+      ),
+
+      // Common dependency overrides for version alignment
+      dependencyOverrides ++= Seq(
+        Dependencies.Logging.slf4jApi,
+        Dependencies.Google.guava,
+        Dependencies.Avro.core,
+        Dependencies.Misc.jline,
+        Dependencies.Jackson.core,
+        Dependencies.Jackson.databind,
+        Dependencies.Jackson.annotations,
+        Dependencies.Jackson.moduleScala
+      )
+    )
+
+  // ===== COMBINED SETTINGS FOR MODULES =====
+  lazy val sparkModuleSettings: Seq[Setting[_]] = commonSettings ++ testSettings
+}
