@@ -168,6 +168,63 @@ object Dependencies {
     val clientRuntime = "org.apache.hadoop" % "hadoop-client-runtime" % Versions.hadoop
     val clientMinicluster = "org.apache.hadoop" % "hadoop-client-minicluster" % Versions.hadoop
     val minikdc = "org.apache.hadoop" % "hadoop-minikdc" % Versions.hadoop
+    // Cloud storage connectors
+    val aws = ("org.apache.hadoop" % "hadoop-aws" % Versions.hadoop).excludeAll(
+      ExclusionRule(organization = "org.wildfly.openssl", name = "wildfly-openssl")
+    )
+    val azure = "org.apache.hadoop" % "hadoop-azure" % Versions.hadoop
+    val huaweicloud = "org.apache.hadoop" % "hadoop-huaweicloud" % Versions.hadoop
+    val cloudStorage = ("org.apache.hadoop" % "hadoop-cloud-storage" % Versions.hadoop).excludeAll(
+      ExclusionRule(organization = "org.jacoco", name = "org.jacoco.agent"),
+      ExclusionRule(organization = "org.apache.hadoop", name = "hadoop-cos"),
+      ExclusionRule(organization = "org.apache.hadoop", name = "hadoop-huaweicloud")
+    )
+  }
+
+  // ===== CLOUD PROVIDERS =====
+  object Cloud {
+    // AWS
+    val awsSdkBundle = ("software.amazon.awssdk" % "bundle" % Versions.awsJavaSdkV2).excludeAll(
+      ExclusionRule(organization = "*")
+    )
+    val analyticsAcceleratorS3 = "software.amazon.s3.analyticsaccelerator" % "analyticsaccelerator-s3" % Versions.analyticsAcceleratorS3
+    // GCP
+    val gcsConnector = ("com.google.cloud.bigdataoss" % "gcs-connector" % Versions.gcsConnector classifier "shaded").excludeAll(
+      ExclusionRule(organization = "*")
+    )
+    // Misc
+    val wildflyOpenssl = "org.wildfly.openssl" % "wildfly-openssl" % "2.2.5.Final"
+    val okhttp = "com.squareup.okhttp3" % "okhttp" % "3.12.12"
+    val okio = "com.squareup.okio" % "okio" % "1.17.6"
+  }
+
+  // ===== AWS KINESIS =====
+  object AwsKinesis {
+    private val kinesisExclusions = Seq(
+      ExclusionRule(organization = "com.kjetland", name = "mbknor-jackson-jsonschema_2.12"),
+      ExclusionRule(organization = "org.lz4", name = "lz4-java")
+    )
+    val client = ("software.amazon.kinesis" % "amazon-kinesis-client" % Versions.awsKinesisClient).excludeAll(kinesisExclusions: _*)
+    val producer = ("software.amazon.kinesis" % "amazon-kinesis-producer" % Versions.awsKinesisProducer).excludeAll(kinesisExclusions: _*)
+    // Individual AWS SDK v2 modules for Kinesis
+    val auth = "software.amazon.awssdk" % "auth" % Versions.awsJavaSdkV2
+    val sts = "software.amazon.awssdk" % "sts" % Versions.awsJavaSdkV2
+    val apacheClient = "software.amazon.awssdk" % "apache-client" % Versions.awsJavaSdkV2
+    val regions = "software.amazon.awssdk" % "regions" % Versions.awsJavaSdkV2
+    val dynamodb = "software.amazon.awssdk" % "dynamodb" % Versions.awsJavaSdkV2
+    val kinesis = "software.amazon.awssdk" % "kinesis" % Versions.awsJavaSdkV2
+    val cloudwatch = "software.amazon.awssdk" % "cloudwatch" % Versions.awsJavaSdkV2
+    val sdkCore = "software.amazon.awssdk" % "sdk-core" % Versions.awsJavaSdkV2
+  }
+
+  // ===== GANGLIA =====
+  object Ganglia {
+    val gmetric4j = "info.ganglia.gmetric4j" % "gmetric4j" % "1.0.10"
+  }
+
+  // ===== PROFILER =====
+  object Profiler {
+    val apLoaderAll = "me.bechberger" % "ap-loader-all" % Versions.apLoader
   }
 
   // ===== AVRO =====

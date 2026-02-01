@@ -47,14 +47,19 @@ lazy val spark = (project in file("."))
     // Tier 9: REPL
     repl,
     // Tier 10: Connectors
-    avro, protobuf,
+    avro, protobuf, hadoopCloud, profiler,
     kafkaTokenProvider, kafkaStreaming, kafkaSql,
+    kinesisAsl, gangliaLgpl,
     // Tier 11: Resource Managers
     networkYarn, yarn, kubernetes,
     // Tier 12: Spark Connect
     connectCommon, connect, connectClientJvm, connectClientJdbc,
     // Tier 13: Tools & Examples
-    tools, examples
+    tools, examples,
+    // Tier 14: Assembly (packaging)
+    assembly, kafkaAssembly, kinesisAslAssembly,
+    // Tier 15: Integration Tests
+    dockerIntegrationTests, kubernetesIntegrationTests
   )
   .settings(
     name := "spark-parent",
@@ -820,6 +825,58 @@ lazy val protobuf = (project in file("connector/protobuf"))
     ) ++ TestDeps.common
   )
 
+// Hadoop Cloud Integration (S3, Azure, GCS)
+lazy val hadoopCloud = (project in file("hadoop-cloud"))
+  .dependsOn(
+    sql % Provided,
+    tags % "test->test",
+    core % "test->test",
+    sql % "test->test"
+  )
+  .settings(sparkModuleSettings)
+  .settings(
+    name := "spark-hadoop-cloud",
+    libraryDependencies ++= Seq(
+      // Hadoop
+      Hadoop.clientApi % Provided,
+      Hadoop.clientRuntime,
+      Hadoop.aws,
+      Hadoop.azure,
+      Hadoop.cloudStorage,
+      // Cloud SDKs
+      Cloud.awsSdkBundle,
+      Cloud.analyticsAcceleratorS3,
+      Cloud.gcsConnector,
+      Cloud.wildflyOpenssl,
+      // Jackson
+      Jackson.databind,
+      Jackson.annotations,
+      "com.fasterxml.jackson.dataformat" % "jackson-dataformat-cbor" % Versions.jackson,
+      // HTTP
+      Commons.httpClient,
+      Commons.httpCore,
+      // Jetty
+      Jetty.util,
+      "org.eclipse.jetty" % "jetty-util-ajax" % Versions.jetty,
+      // Misc
+      Misc.jodaTime
+    ) ++ TestDeps.common
+  )
+
+// Profiler - async-profiler based executor profiling
+lazy val profiler = (project in file("connector/profiler"))
+  .dependsOn(
+    core % Provided
+  )
+  .settings(sparkModuleSettings)
+  .settings(
+    name := "spark-profiler",
+    libraryDependencies ++= Seq(
+      // Async profiler loader with multi-platform binaries
+      Profiler.apLoaderAll % Provided
+    )
+  )
+
 // Kafka token provider (base for Kafka connectors)
 lazy val kafkaTokenProvider = (project in file("connector/kafka-0-10-token-provider"))
   .dependsOn(
@@ -1198,5 +1255,195 @@ lazy val examples = (project in file("examples"))
       Commons.math3 % Provided,
       // Test
       TestDeps.scalacheck % sbt.Test
+    ) ++ TestDeps.common
+  )
+
+// =============================================================================
+// TIER 14: OPTIONAL CONNECTORS (Special licensing)
+// =============================================================================
+
+// Kinesis integration (ASL license)
+lazy val kinesisAsl = (project in file("connector/kinesis-asl"))
+  .dependsOn(
+    streaming,
+    tags,
+    tags % "test->test",
+    core % "test->test",
+    streaming % "test->test"
+  )
+  .settings(sparkModuleSettings)
+  .settings(
+    name := "spark-streaming-kinesis-asl",
+    // Exclude example files that are in src/main (should be in examples module)
+    Compile / unmanagedSources / excludeFilter := HiddenFileFilter || "JavaKinesisWordCountASL.java",
+    libraryDependencies ++= Seq(
+      // AWS Kinesis
+      AwsKinesis.client,
+      AwsKinesis.auth,
+      AwsKinesis.sts,
+      AwsKinesis.apacheClient,
+      AwsKinesis.regions,
+      AwsKinesis.dynamodb,
+      AwsKinesis.kinesis,
+      AwsKinesis.cloudwatch,
+      AwsKinesis.sdkCore,
+      // Jackson
+      "com.fasterxml.jackson.dataformat" % "jackson-dataformat-cbor" % Versions.jackson,
+      // Test
+      AwsKinesis.producer % sbt.Test,
+      TestDeps.mockitoCore % sbt.Test,
+      TestDeps.byteBuddy % sbt.Test,
+      TestDeps.byteBuddyAgent % sbt.Test,
+      TestDeps.scalacheck % sbt.Test
+    ) ++ TestDeps.common
+  )
+
+// Ganglia integration (LGPL license)
+lazy val gangliaLgpl = (project in file("connector/spark-ganglia-lgpl"))
+  .dependsOn(core)
+  .settings(sparkModuleSettings)
+  .settings(
+    name := "spark-ganglia-lgpl",
+    libraryDependencies ++= Seq(
+      Ganglia.gmetric4j
+    )
+  )
+
+// =============================================================================
+// TIER 15: ASSEMBLY (Packaging modules)
+// =============================================================================
+
+// Main Spark assembly - aggregates all modules for distribution
+lazy val assembly = (project in file("assembly"))
+  .dependsOn(
+    core,
+    mllib,
+    streaming,
+    graphx,
+    sql,
+    repl,
+    connect,
+    connectClientJvm % Provided,
+    connectClientJdbc % Provided,
+    avro % Provided,
+    protobuf % Provided
+  )
+  .settings(sparkModuleSettings)
+  .settings(
+    name := "spark-assembly",
+    publish / skip := true,
+    // Assembly is a POM-only module - no sources to compile
+    Compile / sources := Seq.empty,
+    Test / sources := Seq.empty,
+    libraryDependencies ++= Seq(
+      Google.guava,
+      Google.failureaccess
+    )
+  )
+
+// Kafka streaming assembly
+lazy val kafkaAssembly = (project in file("connector/kafka-0-10-assembly"))
+  .dependsOn(
+    kafkaStreaming,
+    streaming % Provided
+  )
+  .settings(sparkModuleSettings)
+  .settings(
+    name := "spark-streaming-kafka-0-10-assembly",
+    publish / skip := true,
+    // Assembly module - no additional sources
+    Compile / sources := Seq.empty,
+    Test / sources := Seq.empty,
+    libraryDependencies ++= Seq(
+      // Mark as provided - already in Spark assembly
+      Commons.codec % Provided,
+      Commons.lang2 % Provided,
+      Protobuf.java % Provided,
+      Hadoop.clientApi % Provided,
+      Hadoop.clientRuntime % Provided,
+      Avro.mapred % Provided,
+      ZooKeeper.curatorRecipes % Provided,
+      ZooKeeper.core % Provided,
+      Logging.log4jApi % Provided,
+      Logging.log4jCore % Provided,
+      Logging.log4j12Api % Provided,
+      Scala.library % Provided,
+      Logging.slf4jApi % Provided,
+      Logging.log4jSlf4j2Impl % Provided,
+      Compression.snappy % Provided
+    )
+  )
+
+// Kinesis streaming assembly (ASL license)
+lazy val kinesisAslAssembly = (project in file("connector/kinesis-asl-assembly"))
+  .dependsOn(
+    kinesisAsl,
+    streaming % Provided
+  )
+  .settings(sparkModuleSettings)
+  .settings(
+    name := "spark-streaming-kinesis-asl-assembly",
+    publish / skip := true,
+    // Assembly module - no additional sources
+    Compile / sources := Seq.empty,
+    Test / sources := Seq.empty,
+    libraryDependencies ++= Seq(
+      // Mark as provided - already in Spark assembly
+      Jackson.databind % Provided,
+      Commons.lang2 % Provided,
+      Jersey.client % Provided,
+      Jersey.common % Provided,
+      Jersey.server % Provided,
+      Logging.log4jApi % Provided,
+      Logging.log4jCore % Provided,
+      Logging.log4j12Api % Provided,
+      Hadoop.clientApi % Provided,
+      Hadoop.clientRuntime % Provided,
+      Avro.mapred % Provided,
+      ZooKeeper.curatorRecipes % Provided,
+      ZooKeeper.core % Provided,
+      Logging.slf4jApi % Provided,
+      Logging.log4jSlf4j2Impl % Provided,
+      Compression.snappy % Provided
+    )
+  )
+
+// =============================================================================
+// TIER 16: INTEGRATION TESTS
+// =============================================================================
+
+// Docker-based integration tests
+lazy val dockerIntegrationTests = (project in file("connector/docker-integration-tests"))
+  .dependsOn(
+    tags % "test->test",
+    core % "test->test",
+    catalyst % "test->test",
+    sql % "test->test"
+  )
+  .settings(sparkModuleSettings)
+  .settings(
+    name := "spark-docker-integration-tests",
+    publish / skip := true,
+    // Test-only module
+    Compile / sources := Seq.empty,
+    libraryDependencies ++= Seq(
+      Google.guava % sbt.Test
+    ) ++ TestDeps.common
+  )
+
+// Kubernetes integration tests
+lazy val kubernetesIntegrationTests = (project in file("resource-managers/kubernetes/integration-tests"))
+  .dependsOn(
+    core,
+    kubernetes % sbt.Test,
+    tags % "test->test",
+    core % "test->test"
+  )
+  .settings(sparkModuleSettings)
+  .settings(
+    name := "spark-kubernetes-integration-tests",
+    publish / skip := true,
+    libraryDependencies ++= Seq(
+      Kubernetes.client
     ) ++ TestDeps.common
   )
