@@ -37,7 +37,8 @@ object Dependencies {
   object Jackson {
     val core = "com.fasterxml.jackson.core" % "jackson-core" % Versions.jackson
     val databind = "com.fasterxml.jackson.core" % "jackson-databind" % Versions.jackson
-    val annotations = "com.fasterxml.jackson.core" % "jackson-annotations" % Versions.jackson
+    // jackson-annotations uses different versioning since 2.20 (no patch version)
+    val annotations = "com.fasterxml.jackson.core" % "jackson-annotations" % Versions.jacksonAnnotations
     val moduleScala = "com.fasterxml.jackson.module" %% "jackson-module-scala" % Versions.jackson
     val dataformatYaml = "com.fasterxml.jackson.dataformat" % "jackson-dataformat-yaml" % Versions.jackson
     val datatypeJsr310 = "com.fasterxml.jackson.datatype" % "jackson-datatype-jsr310" % Versions.jackson
@@ -404,7 +405,7 @@ object Dependencies {
   // ===== COMPRESSION =====
   object Compression {
     val snappy = "org.xerial.snappy" % "snappy-java" % Versions.snappy
-    val lz4 = "org.lz4" % "lz4-java" % Versions.lz4
+    val lz4 = "at.yawk.lz4" % "lz4-java" % Versions.lz4
     val zstd = "com.github.luben" % "zstd-jni" % Versions.zstd
     val compressLzf = "com.ning" % "compress-lzf" % Versions.compressLzf
     val xz = "org.tukaani" % "xz" % Versions.xz

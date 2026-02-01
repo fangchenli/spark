@@ -81,6 +81,8 @@ object Versions {
 
   // ===== SERIALIZATION =====
   val jackson: String = get("jackson.version")
+  // jackson-annotations uses different versioning since 2.20 (no patch version)
+  val jacksonAnnotations: String = get("jackson.annotations.version")
   val protobuf: String = get("protobuf.version")
   val kryo: String = get("kryo.version")
   val chill: String = get("chill.version")
