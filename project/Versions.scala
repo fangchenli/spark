@@ -76,6 +76,7 @@ object Versions {
   val avro: String = get("avro.version")
   val parquet: String = get("parquet.version")
   val orc: String = get("orc.version")
+  val orcFormat: String = get("orc.format.version")
   val orcClassifier: String = get("orc.classifier")
   val arrow: String = get("arrow.version")
 

@@ -247,6 +247,7 @@ object Dependencies {
   // ===== PARQUET =====
   object Parquet {
     val column = "org.apache.parquet" % "parquet-column" % Versions.parquet
+    val columnTests = "org.apache.parquet" % "parquet-column" % Versions.parquet classifier "tests"
     val hadoop = "org.apache.parquet" % "parquet-hadoop" % Versions.parquet
     val avro = "org.apache.parquet" % "parquet-avro" % Versions.parquet
     val common = "org.apache.parquet" % "parquet-common" % Versions.parquet
@@ -255,7 +256,8 @@ object Dependencies {
 
   // ===== ORC =====
   object Orc {
-    val format = "org.apache.orc" % "orc-format" % Versions.orc classifier Versions.orcClassifier
+    // orc-format has a different versioning scheme than orc-core
+    val format = "org.apache.orc" % "orc-format" % Versions.orcFormat classifier Versions.orcClassifier
     val core = "org.apache.orc" % "orc-core" % Versions.orc classifier Versions.orcClassifier
     val mapreduce = "org.apache.orc" % "orc-mapreduce" % Versions.orc classifier Versions.orcClassifier
   }
@@ -343,6 +345,10 @@ object Dependencies {
   // ===== DATANUCLEUS =====
   object Datanucleus {
     val core = "org.datanucleus" % "datanucleus-core" % Versions.datanucleusCore
+    // Required for Hive metastore tests
+    val apiJdo = "org.datanucleus" % "datanucleus-api-jdo" % "4.2.4"
+    val rdbms = "org.datanucleus" % "datanucleus-rdbms" % "4.1.19"
+    val jdo = "javax.jdo" % "jdo-api" % "3.0.1"
   }
 
   // ===== SERVLET =====

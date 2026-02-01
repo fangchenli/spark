@@ -123,11 +123,21 @@ object Settings {
   )
 
   // Default excluded test tags
-  val defaultExcludedTags: Seq[String] = Seq(
-    "org.apache.spark.tags.ChromeUITest",
-    "org.apache.spark.deploy.k8s.integrationtest.YuniKornTag",
-    "org.apache.spark.internal.io.cloud.IntegrationTestSuite"
-  )
+  val defaultExcludedTags: Seq[String] = {
+    val baseTags = Seq(
+      "org.apache.spark.tags.ChromeUITest",
+      "org.apache.spark.deploy.k8s.integrationtest.YuniKornTag",
+      "org.apache.spark.internal.io.cloud.IntegrationTestSuite"
+    )
+    // On Apple Silicon, exclude LevelDB tests since leveldbjni doesn't have ARM64 support
+    val isAppleSilicon = sys.props("os.name").contains("Mac OS X") &&
+      sys.props("os.arch") == "aarch64"
+    if (isAppleSilicon) {
+      baseTags :+ "org.apache.spark.tags.ExtendedLevelDBTest"
+    } else {
+      baseTags
+    }
+  }
 
   // ===== TEST SETTINGS =====
   lazy val testSettings: Seq[Setting[_]] = Seq(
@@ -148,7 +158,10 @@ object Settings {
         "SPARK_PREPEND_CLASSES" -> "1",
         "SPARK_SCALA_VERSION" -> Versions.scalaBinary,
         "SPARK_TESTING" -> "1",
-        "JAVA_HOME" -> sys.env.getOrElse("JAVA_HOME", sys.props("java.home"))
+        "JAVA_HOME" -> sys.env.getOrElse("JAVA_HOME", sys.props("java.home")),
+        // Set SPARK_LOCAL_IP to avoid hostname resolution issues on macOS
+        // This ensures Utils.localHostName() returns a bindable address
+        "SPARK_LOCAL_IP" -> sys.env.getOrElse("SPARK_LOCAL_IP", "127.0.0.1")
       )
       // macOS specific
       if (sys.props("os.name").contains("Mac OS X")) {
@@ -191,6 +204,10 @@ object Settings {
     Test / testOptions += Tests.Argument(TestFrameworks.ScalaTest, "-oDF"),
     // Slowpoke notifications
     Test / testOptions += Tests.Argument(TestFrameworks.ScalaTest, "-W", "120", "300"),
+    // Exclude test tags (e.g., ExtendedLevelDBTest on Apple Silicon)
+    Test / testOptions ++= defaultExcludedTags.map(tag =>
+      Tests.Argument(TestFrameworks.ScalaTest, "-l", tag)
+    ),
 
     // JUnit interface
     libraryDependencies += Dependencies.TestDeps.jupiterInterface % Test

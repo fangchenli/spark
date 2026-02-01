@@ -450,13 +450,16 @@ lazy val sql = (project in file("sql/core"))
     sketch,
     tags % "test->test",
     core % "test->test",
-    catalyst % "test->test"
+    catalyst % "test->test",
+    sqlApi % "test->test"
   )
   .settings(sparkModuleSettings)
   .settings(
     name := "spark-sql",
     // SPARK-54830: Larger heap for AdaptiveQueryExecSuite OOM
     Test / javaOptions += "-Xmx6g",
+    // Include pre-generated Avro test classes
+    Test / unmanagedSourceDirectories += baseDirectory.value / "src" / "test" / "gen-java",
     // Protobuf configuration
     Compile / PB.targets := Seq(
       PB.gens.java(Versions.protobuf) -> (Compile / sourceManaged).value / "protobuf"
@@ -487,6 +490,8 @@ lazy val sql = (project in file("sql/core"))
       Database.derby % sbt.Test,
       Database.derbyTools % sbt.Test,
       Database.h2 % sbt.Test,
+      Parquet.columnTests % sbt.Test,
+      Orc.format % sbt.Test,  // For OrcProto classes
       Parquet.avro
     ) ++ TestDeps.common
   )
@@ -695,6 +700,10 @@ lazy val hive = (project in file("sql/hive"))
       Security.bouncycastleBcpkix,
       // Test
       Parquet.hadoop % sbt.Test classifier "tests",
+      Orc.format % sbt.Test,  // For OrcProto classes
+      Datanucleus.apiJdo % sbt.Test,  // For Hive metastore tests
+      Datanucleus.rdbms % sbt.Test,
+      Datanucleus.jdo % sbt.Test,
       TestDeps.scalacheck % sbt.Test
     ) ++ TestDeps.common
   )
@@ -814,6 +823,11 @@ lazy val protobuf = (project in file("connector/protobuf"))
   .settings(Shading.protobufAssemblySettings)
   .settings(
     name := "spark-protobuf",
+    // Protobuf test code generation
+    Test / PB.targets := Seq(
+      PB.gens.java(Versions.protobuf) -> (Test / sourceManaged).value / "protobuf"
+    ),
+    Test / PB.protoSources := Seq(baseDirectory.value / "src" / "test" / "resources" / "protobuf"),
     libraryDependencies ++= Seq(
       // Scala
       Scala.parallelCollections,
