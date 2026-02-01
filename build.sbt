@@ -834,6 +834,8 @@ lazy val protobuf = (project in file("connector/protobuf"))
       // Protobuf
       Protobuf.java,
       Protobuf.javaUtil,
+      // Include proto files from protobuf-java for well-known types (google/protobuf/*.proto)
+      Protobuf.java % "protobuf",
       // Test
       TestDeps.scalacheck % sbt.Test
     ) ++ TestDeps.common
