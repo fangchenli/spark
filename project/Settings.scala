@@ -261,6 +261,16 @@ object Settings {
       )
     )
 
+  // ===== MIMA SETTINGS =====
+  // Settings for modules that should be checked for binary compatibility
+  lazy val mimaSettings: Seq[Setting[_]] = MimaBuild.mimaSettings()
+
+  // Settings for modules that skip MiMa (new modules, internal modules, etc.)
+  lazy val skipMimaSettings: Seq[Setting[_]] = MimaBuild.skipMimaSettings
+
   // ===== COMBINED SETTINGS FOR MODULES =====
-  lazy val sparkModuleSettings: Seq[Setting[_]] = commonSettings ++ testSettings
+  lazy val sparkModuleSettings: Seq[Setting[_]] = commonSettings ++ testSettings ++ skipMimaSettings
+
+  // Settings for modules with MiMa binary compatibility checking
+  lazy val sparkModuleWithMimaSettings: Seq[Setting[_]] = commonSettings ++ testSettings ++ mimaSettings
 }

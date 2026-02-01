@@ -16,7 +16,7 @@
  */
 
 import sbt._
-import sbt.Keys.version
+import sbt.Keys.{name, version}
 
 import com.typesafe.tools.mima.core._
 import com.typesafe.tools.mima.core.MissingClassProblem
@@ -25,6 +25,10 @@ import com.typesafe.tools.mima.core.ProblemFilters._
 import com.typesafe.tools.mima.plugin.MimaKeys.{mimaBinaryIssueFilters, mimaPreviousArtifacts, mimaFailOnNoPrevious}
 
 object MimaBuild {
+
+  // Previous Spark version for binary compatibility checking
+  val previousSparkVersion = "4.0.0"
+  val organization = "org.apache.spark"
 
   def excludeMember(fullName: String) = Seq(
       ProblemFilters.exclude[MissingMethodProblem](fullName),
@@ -84,9 +88,8 @@ object MimaBuild {
     ignoredMembers.flatMap(excludeMember) ++ MimaExcludes.excludes(currentSparkVersion)
   }
 
+  // Legacy method for compatibility with old SparkBuild.scala
   def mimaSettings(sparkHome: File, projectRef: ProjectRef): Seq[Setting[_]] = {
-    val organization = "org.apache.spark"
-    val previousSparkVersion = "4.0.0"
     val project = projectRef.project
     val id = "spark-" + project
 
@@ -96,5 +99,34 @@ object MimaBuild {
       mimaBinaryIssueFilters ++= ignoredABIProblems(sparkHome, version.value)
     )
   }
+
+  /**
+   * MiMa settings for use with native SBT build.
+   * Apply this to projects that should be checked for binary compatibility.
+   *
+   * Usage in build.sbt:
+   *   .settings(MimaBuild.mimaSettings())
+   */
+  def mimaSettings(): Seq[Setting[_]] = {
+    val sparkHome = file(".")
+    Seq(
+      mimaFailOnNoPrevious := true,
+      // Use the project name (which should be "spark-xxx") to derive the artifact ID
+      mimaPreviousArtifacts := {
+        val projectName = name.value
+        // Project name is already "spark-xxx", use it directly
+        Set(organization % s"${projectName}_${Versions.scalaBinary}" % previousSparkVersion)
+      },
+      mimaBinaryIssueFilters ++= ignoredABIProblems(sparkHome, version.value)
+    )
+  }
+
+  /**
+   * Skip MiMa checking for projects that are new or internal.
+   */
+  def skipMimaSettings: Seq[Setting[_]] = Seq(
+    mimaFailOnNoPrevious := false,
+    mimaPreviousArtifacts := Set.empty
+  )
 
 }

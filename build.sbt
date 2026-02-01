@@ -84,7 +84,7 @@ lazy val tags = (project in file("common/tags"))
 
 lazy val sketch = (project in file("common/sketch"))
   .dependsOn(tags % "test->test")
-  .settings(sparkModuleSettings)
+  .settings(sparkModuleWithMimaSettings)
   .settings(
     name := "spark-sketch",
     libraryDependencies ++= Seq(
@@ -123,7 +123,7 @@ lazy val commonUtilsJava = (project in file("common/utils-java"))
 
 lazy val commonUtils = (project in file("common/utils"))
   .dependsOn(commonUtilsJava, tags % "test->test", commonUtilsJava % "test->test")
-  .settings(sparkModuleSettings)
+  .settings(sparkModuleWithMimaSettings)
   .settings(
     name := "spark-common-utils",
     libraryDependencies ++= Seq(
@@ -180,7 +180,7 @@ lazy val unsafe = (project in file("common/unsafe"))
 
 lazy val kvstore = (project in file("common/kvstore"))
   .dependsOn(commonUtils, tags % "test->test")
-  .settings(sparkModuleSettings)
+  .settings(sparkModuleWithMimaSettings)
   .settings(
     name := "spark-kvstore",
     libraryDependencies ++= Seq(
@@ -235,7 +235,7 @@ lazy val networkShuffle = (project in file("common/network-shuffle"))
 
 lazy val launcher = (project in file("launcher"))
   .dependsOn(tags % "test->test")
-  .settings(sparkModuleSettings)
+  .settings(sparkModuleWithMimaSettings)
   .settings(
     name := "spark-launcher",
     libraryDependencies ++= Logging.all.map(_ % sbt.Test) ++ TestDeps.common
@@ -257,7 +257,7 @@ lazy val connectShims = (project in file("sql/connect/shims"))
 lazy val sqlApi = (project in file("sql/api"))
   .dependsOn(commonUtils, unsafe, sketch, connectShims, tags % "test->test")
   .enablePlugins(Antlr4Plugin)
-  .settings(sparkModuleSettings)
+  .settings(sparkModuleWithMimaSettings)
   .settings(
     name := "spark-sql-api",
     // ANTLR4 configuration
@@ -295,7 +295,7 @@ lazy val core = (project in file("core"))
     networkShuffle % "test->test",
     commonUtils % "test->test"
   )
-  .settings(sparkModuleSettings)
+  .settings(sparkModuleWithMimaSettings)
   .settings(Shading.coreAssemblySettings)
   .settings(
     name := "spark-core",
@@ -418,7 +418,7 @@ lazy val catalyst = (project in file("sql/catalyst"))
     tags % "test->test",
     core % "test->test"
   )
-  .settings(sparkModuleSettings)
+  .settings(sparkModuleWithMimaSettings)
   .settings(
     name := "spark-catalyst",
     // Larger heap for tests
@@ -453,7 +453,7 @@ lazy val sql = (project in file("sql/core"))
     catalyst % "test->test",
     sqlApi % "test->test"
   )
-  .settings(sparkModuleSettings)
+  .settings(sparkModuleWithMimaSettings)
   .settings(
     name := "spark-sql",
     // SPARK-54830: Larger heap for AdaptiveQueryExecSuite OOM
@@ -531,7 +531,7 @@ lazy val streaming = (project in file("streaming"))
     tags % "test->test",
     core % "test->test"
   )
-  .settings(sparkModuleSettings)
+  .settings(sparkModuleWithMimaSettings)
   .settings(
     name := "spark-streaming",
     libraryDependencies ++= Seq(
@@ -563,7 +563,7 @@ lazy val mlLibLocal = (project in file("mllib-local"))
     tags % "test->test",
     core % "test->test"
   )
-  .settings(sparkModuleSettings)
+  .settings(sparkModuleWithMimaSettings)
   .settings(
     name := "spark-mllib-local",
     libraryDependencies ++= Seq(
@@ -586,7 +586,7 @@ lazy val graphx = (project in file("graphx"))
     tags % "test->test",
     core % "test->test"
   )
-  .settings(sparkModuleSettings)
+  .settings(sparkModuleWithMimaSettings)
   .settings(
     name := "spark-graphx",
     libraryDependencies ++= Seq(
@@ -616,7 +616,7 @@ lazy val mllib = (project in file("mllib"))
     streaming % "test->test",
     mlLibLocal % "test->test"
   )
-  .settings(sparkModuleSettings)
+  .settings(sparkModuleWithMimaSettings)
   .settings(
     name := "spark-mllib",
     libraryDependencies ++= Seq(
@@ -698,12 +698,13 @@ lazy val hive = (project in file("sql/hive"))
       Database.derbyTools,
       // Security
       Security.bouncycastleBcpkix,
+      // JDO API and Datanucleus - required at runtime for Hive metastore
+      Datanucleus.apiJdo,
+      Datanucleus.rdbms,
+      Datanucleus.jdo,
       // Test
       Parquet.hadoop % sbt.Test classifier "tests",
       Orc.format % sbt.Test,  // For OrcProto classes
-      Datanucleus.apiJdo % sbt.Test,  // For Hive metastore tests
-      Datanucleus.rdbms % sbt.Test,
-      Datanucleus.jdo % sbt.Test,
       TestDeps.scalacheck % sbt.Test
     ) ++ TestDeps.common
   )
@@ -798,7 +799,7 @@ lazy val avro = (project in file("connector/avro"))
     catalyst % "test->test",
     sql % "test->test"
   )
-  .settings(sparkModuleSettings)
+  .settings(sparkModuleWithMimaSettings)
   .settings(
     name := "spark-avro",
     libraryDependencies ++= Seq(
@@ -819,7 +820,7 @@ lazy val protobuf = (project in file("connector/protobuf"))
     catalyst % "test->test",
     sql % "test->test"
   )
-  .settings(sparkModuleSettings)
+  .settings(sparkModuleWithMimaSettings)
   .settings(Shading.protobufAssemblySettings)
   .settings(
     name := "spark-protobuf",
@@ -849,7 +850,7 @@ lazy val hadoopCloud = (project in file("hadoop-cloud"))
     core % "test->test",
     sql % "test->test"
   )
-  .settings(sparkModuleSettings)
+  .settings(sparkModuleWithMimaSettings)
   .settings(
     name := "spark-hadoop-cloud",
     libraryDependencies ++= Seq(
@@ -924,7 +925,7 @@ lazy val kafkaStreaming = (project in file("connector/kafka-0-10"))
     core % "test->test",
     streaming % "test->test"
   )
-  .settings(sparkModuleSettings)
+  .settings(sparkModuleWithMimaSettings)
   .settings(
     name := "spark-streaming-kafka-0-10",
     libraryDependencies ++= Seq(
@@ -1015,7 +1016,7 @@ lazy val yarn = (project in file("resource-managers/yarn"))
     networkCommon % "test->test",
     networkYarn % "test->test"
   )
-  .settings(sparkModuleSettings)
+  .settings(sparkModuleWithMimaSettings)
   .settings(
     name := "spark-yarn",
     libraryDependencies ++= Seq(
@@ -1049,7 +1050,7 @@ lazy val kubernetes = (project in file("resource-managers/kubernetes/core"))
     tags % "test->test",
     core % "test->test"
   )
-  .settings(sparkModuleSettings)
+  .settings(sparkModuleWithMimaSettings)
   .settings(
     name := "spark-kubernetes",
     // Include volcano sources
@@ -1293,7 +1294,7 @@ lazy val kinesisAsl = (project in file("connector/kinesis-asl"))
     core % "test->test",
     streaming % "test->test"
   )
-  .settings(sparkModuleSettings)
+  .settings(sparkModuleWithMimaSettings)
   .settings(
     name := "spark-streaming-kinesis-asl",
     // Exclude example files that are in src/main (should be in examples module)
@@ -1323,7 +1324,7 @@ lazy val kinesisAsl = (project in file("connector/kinesis-asl"))
 // Ganglia integration (LGPL license)
 lazy val gangliaLgpl = (project in file("connector/spark-ganglia-lgpl"))
   .dependsOn(core)
-  .settings(sparkModuleSettings)
+  .settings(sparkModuleWithMimaSettings)
   .settings(
     name := "spark-ganglia-lgpl",
     libraryDependencies ++= Seq(

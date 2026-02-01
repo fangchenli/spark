@@ -345,10 +345,10 @@ object Dependencies {
   // ===== DATANUCLEUS =====
   object Datanucleus {
     val core = "org.datanucleus" % "datanucleus-core" % Versions.datanucleusCore
-    // Required for Hive metastore tests
+    // Required for Hive metastore - datanucleus-api-jdo 4.2.x requires JDO 3.2
     val apiJdo = "org.datanucleus" % "datanucleus-api-jdo" % "4.2.4"
     val rdbms = "org.datanucleus" % "datanucleus-rdbms" % "4.1.19"
-    val jdo = "javax.jdo" % "jdo-api" % "3.0.1"
+    val jdo = "javax.jdo" % "jdo-api" % "3.2.1"
   }
 
   // ===== SERVLET =====
