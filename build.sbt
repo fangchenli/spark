@@ -1138,8 +1138,13 @@ lazy val connect = (project in file("sql/connect/server"))
   )
   .settings(
     // Filter out connect-shims classes from classpath since we use real Spark classes
+    // The shims provide stub implementations for client-only usage; the server uses full Spark
     Compile / dependencyClasspath := {
       val cp = (Compile / dependencyClasspath).value
+      cp.filterNot(_.data.getAbsolutePath.contains("connect/shims"))
+    },
+    Test / dependencyClasspath := {
+      val cp = (Test / dependencyClasspath).value
       cp.filterNot(_.data.getAbsolutePath.contains("connect/shims"))
     }
   )
@@ -1170,6 +1175,7 @@ lazy val connect = (project in file("sql/connect/server"))
       Netty.transportNativeUnixCommon % Provided,
       // Test
       Database.h2 % sbt.Test,
+      Orc.format % sbt.Test,  // For OrcProto classes used in tests
       TestDeps.scalacheck % sbt.Test,
       TestDeps.mockitoCore % sbt.Test,
       TestDeps.byteBuddy % sbt.Test,
