@@ -51,8 +51,8 @@ lazy val spark = (project in file("."))
     kafkaTokenProvider, kafkaStreaming, kafkaSql,
     // Tier 11: Resource Managers
     networkYarn, yarn, kubernetes,
-    // Tier 12: Spark Connect (requires gRPC protoc plugin - skipped for now)
-    // connectCommon, connect,
+    // Tier 12: Spark Connect
+    connectCommon, connect,
     // Tier 13: Tools & Examples
     tools, examples
   )
@@ -1012,16 +1012,19 @@ lazy val connectCommon = (project in file("sql/connect/common"))
   .settings(sparkModuleSettings)
   .settings(
     name := "spark-connect-common",
-    // Protobuf configuration for Connect
+    // Protobuf configuration for Connect with gRPC plugin
     Compile / PB.targets := Seq(
-      PB.gens.java(Versions.protobuf) -> (Compile / sourceManaged).value / "protobuf"
+      PB.gens.java(Versions.protobuf) -> (Compile / sourceManaged).value / "protobuf",
+      PB.gens.plugin("grpc-java") -> (Compile / sourceManaged).value / "protobuf"
     ),
     Compile / PB.protoSources := Seq(baseDirectory.value / "src" / "main" / "protobuf"),
+    // Include the proto source directory for inter-file imports
+    Compile / PB.includePaths ++= Seq(baseDirectory.value / "src" / "main" / "protobuf"),
     libraryDependencies ++= Seq(
       // Scala
       Scala.library,
-      // Protobuf
-      Protobuf.java,
+      // Protobuf (with proto files for standard types like google/protobuf/any.proto)
+      Protobuf.java % "protobuf",
       // gRPC
       Grpc.netty,
       Grpc.protobuf,
@@ -1033,20 +1036,23 @@ lazy val connectCommon = (project in file("sql/connect/common"))
       Netty.handlerProxy,
       Netty.transportNativeUnixCommon,
       // Compression
-      Compression.zstd
+      Compression.zstd,
+      // gRPC protoc plugin (for code generation)
+      "io.grpc" % "protoc-gen-grpc-java" % Versions.grpc asProtocPlugin()
     ) ++ TestDeps.common
   )
 
 // Connect Server
+// Note: Filter out connect-shims from classpath as we use real Spark classes
 lazy val connect = (project in file("sql/connect/server"))
   .dependsOn(
+    core,
+    catalyst,
+    sql,
+    mllib,
+    tags,
     connectCommon,
     pipelines,
-    core % Provided,
-    catalyst % Provided,
-    sql % Provided,
-    mllib % Provided,
-    tags % Provided,
     tags % "test->test",
     core % "test->test",
     catalyst % "test->test",
@@ -1056,6 +1062,13 @@ lazy val connect = (project in file("sql/connect/server"))
     avro % sbt.Test,
     protobuf % sbt.Test,
     repl % "test->test"
+  )
+  .settings(
+    // Filter out connect-shims classes from classpath since we use real Spark classes
+    Compile / dependencyClasspath := {
+      val cp = (Compile / dependencyClasspath).value
+      cp.filterNot(_.data.getAbsolutePath.contains("connect/shims"))
+    }
   )
   .settings(sparkModuleSettings)
   .settings(Shading.connectAssemblySettings)
