@@ -128,6 +128,8 @@ object Versions {
   val antlr4: String = get("antlr4.version")
   val asm: String = get("asm.version")
   val xbeanAsm: String = get("xbean.asm.version")
+  val classutil: String = get("classutil.version")
+  val scopt: String = get("scopt.version")
 
   // ===== SECURITY =====
   val bouncycastle: String = get("bouncycastle.version")
@@ -172,6 +174,7 @@ object Versions {
   val byteBuddy: String = get("byte.buddy.version")
   val selenium: String = get("selenium.version")
   val htmlunitDriver: String = get("htmlunit.driver.version")
+  val jmock: String = get("jmock.version")
 
   // ===== DATABASE DRIVERS (TEST) =====
   val mariadbClient: String = get("mariadb.java.client.version")
@@ -206,6 +209,7 @@ object Versions {
   val lz4: String = get("lz4.version")
   val zstd: String = get("zstd.version")
   val compressLzf: String = get("compress.lzf.version")
+  val xz: String = get("xz.version")
 
   // ===== MISC =====
   val icu4j: String = get("icu4j.version")

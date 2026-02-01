@@ -63,6 +63,10 @@ object Dependencies {
     val transport = "io.netty" % "netty-transport" % Versions.netty
     val transportNativeEpoll = "io.netty" % "netty-transport-native-epoll" % Versions.netty
     val transportNativeKqueue = "io.netty" % "netty-transport-native-kqueue" % Versions.netty
+    // Additional Netty modules for gRPC/Connect
+    val codecHttp2 = "io.netty" % "netty-codec-http2" % Versions.netty
+    val handlerProxy = "io.netty" % "netty-handler-proxy" % Versions.netty
+    val transportNativeUnixCommon = "io.netty" % "netty-transport-native-unix-common" % Versions.netty
 
     // Native classifiers
     val epollLinuxX64 = "io.netty" % "netty-transport-native-epoll" % Versions.netty classifier "linux-x86_64"
@@ -96,9 +100,14 @@ object Dependencies {
     val ee10Plus = "org.eclipse.jetty.ee10" % "jetty-ee10-plus" % Versions.jetty
     val ee10Proxy = "org.eclipse.jetty.ee10" % "jetty-ee10-proxy" % Versions.jetty
     val ee10Webapp = "org.eclipse.jetty.ee10" % "jetty-ee10-webapp" % Versions.jetty
+    // Compression modules (Jetty 12+)
+    val compressionServer = "org.eclipse.jetty.compression" % "jetty-compression-server" % Versions.jetty
+    val compressionCommon = "org.eclipse.jetty.compression" % "jetty-compression-common" % Versions.jetty
+    val compressionGzip = "org.eclipse.jetty.compression" % "jetty-compression-gzip" % Versions.jetty
 
     val forShading = Seq(io, http, server, security, util, client, session,
-      ee10Servlet, ee10Servlets, ee10Plus, ee10Proxy)
+      ee10Servlet, ee10Servlets, ee10Plus, ee10Proxy,
+      compressionServer, compressionCommon, compressionGzip)
   }
 
   // ===== LOGGING =====
@@ -325,6 +334,14 @@ object Dependencies {
     val commonsCompiler = "org.codehaus.janino" % "commons-compiler" % Versions.janino
     val antlr4Runtime = "org.antlr" % "antlr4-runtime" % Versions.antlr4
     val xbeanAsm = "org.apache.xbean" % "xbean-asm9-shaded" % Versions.xbeanAsm
+    // ASM bytecode library
+    val asm = "org.ow2.asm" % "asm" % Versions.asm
+    val asmCommons = "org.ow2.asm" % "asm-commons" % Versions.asm
+    val asmUtil = "org.ow2.asm" % "asm-util" % Versions.asm
+    // Classutil for tools
+    val classutil = ("org.clapper" %% "classutil" % Versions.classutil).excludeAll(
+      ExclusionRule(organization = "org.ow2.asm")
+    )
   }
 
   // ===== COMPRESSION =====
@@ -333,6 +350,7 @@ object Dependencies {
     val lz4 = "org.lz4" % "lz4-java" % Versions.lz4
     val zstd = "com.github.luben" % "zstd-jni" % Versions.zstd
     val compressLzf = "com.ning" % "compress-lzf" % Versions.compressLzf
+    val xz = "org.tukaani" % "xz" % Versions.xz
   }
 
   // ===== SECURITY =====
@@ -362,6 +380,7 @@ object Dependencies {
     // JAXB for PMML
     val jaxbRuntime = "org.glassfish.jaxb" % "jaxb-runtime" % Versions.jaxbRuntime
     val jakartaXmlBindApi = "jakarta.xml.bind" % "jakarta.xml.bind-api" % Versions.jakartaXmlBindApi
+    val jaxbApi = "javax.xml.bind" % "jaxb-api" % Versions.jaxb
   }
 
   // ===== MISC =====
@@ -385,6 +404,8 @@ object Dependencies {
     val jpam = "net.sf.jpam" % "jpam" % Versions.jpam excludeAll(
       ExclusionRule(organization = "commons-logging")
     )
+    // CLI parser for examples
+    val scopt = "com.github.scopt" %% "scopt" % Versions.scopt
   }
 
   // ===== TESTING =====
@@ -408,6 +429,7 @@ object Dependencies {
     val htmlunitDriver = "org.seleniumhq.selenium" % "htmlunit3-driver" % Versions.htmlunitDriver
     val curatorTest = "org.apache.curator" % "curator-test" % Versions.curator
     val jnrPosix = "com.github.jnr" % "jnr-posix" % Versions.jnrPosix
+    val jmockJunit5 = "org.jmock" % "jmock-junit5" % Versions.jmock
 
     val common = Seq(
       scalatest % sbt.Test,
@@ -424,12 +446,24 @@ object Dependencies {
     val protobuf = "io.grpc" % "grpc-protobuf" % Versions.grpc
     val stub = "io.grpc" % "grpc-stub" % Versions.grpc
     val services = "io.grpc" % "grpc-services" % Versions.grpc
+    val inprocess = "io.grpc" % "grpc-inprocess" % Versions.grpc
   }
 
   // ===== KAFKA =====
   object Kafka {
-    val clients = "org.apache.kafka" % "kafka-clients" % Versions.kafka
-    val core = "org.apache.kafka" %% "kafka" % Versions.kafka
+    // Exclusions to avoid conflicts with Spark's versions
+    private val kafkaExclusions = Seq(
+      ExclusionRule(organization = "com.github.luben", name = "zstd-jni"),
+      ExclusionRule(organization = "org.lz4", name = "lz4-java")
+    )
+    private val kafkaTestExclusions = kafkaExclusions ++ Seq(
+      ExclusionRule(organization = "com.fasterxml.jackson.core", name = "jackson-core"),
+      ExclusionRule(organization = "com.fasterxml.jackson.core", name = "jackson-databind"),
+      ExclusionRule(organization = "com.fasterxml.jackson.core", name = "jackson-annotations"),
+      ExclusionRule(organization = "commons-logging", name = "commons-logging")
+    )
+    val clients = ("org.apache.kafka" % "kafka-clients" % Versions.kafka).excludeAll(kafkaExclusions: _*)
+    val core = ("org.apache.kafka" %% "kafka" % Versions.kafka).excludeAll(kafkaTestExclusions: _*)
   }
 
   // ===== JERSEY =====
@@ -440,6 +474,18 @@ object Dependencies {
     val containerServlet = "org.glassfish.jersey.containers" % "jersey-container-servlet" % Versions.jersey
     val containerServletCore = "org.glassfish.jersey.containers" % "jersey-container-servlet-core" % Versions.jersey
     val hk2 = "org.glassfish.jersey.inject" % "jersey-hk2" % Versions.jersey
+  }
+
+  // ===== KUBERNETES =====
+  object Kubernetes {
+    private val k8sExclusions = Seq(
+      ExclusionRule(organization = "com.fasterxml.jackson.core"),
+      ExclusionRule(organization = "com.fasterxml.jackson.dataformat", name = "jackson-dataformat-yaml"),
+      ExclusionRule(organization = "javax.annotation", name = "javax.annotation-api")
+    )
+    val client = ("io.fabric8" % "kubernetes-client" % Versions.kubernetesClient).excludeAll(k8sExclusions: _*)
+    val volcanoModel = "io.fabric8" % "volcano-model" % Versions.kubernetesClient
+    val volcanoClient = "io.fabric8" % "volcano-client" % Versions.kubernetesClient
   }
 
   // ===== COMMON EXCLUSION RULES =====

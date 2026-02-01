@@ -43,7 +43,18 @@ lazy val spark = (project in file("."))
     // Tier 7: Streaming & ML
     streaming, mlLibLocal, graphx, mllib,
     // Tier 8: Hive
-    hive, hiveThriftserver
+    hive, hiveThriftserver,
+    // Tier 9: REPL
+    repl,
+    // Tier 10: Connectors
+    avro, protobuf,
+    kafkaTokenProvider, kafkaStreaming, kafkaSql,
+    // Tier 11: Resource Managers
+    networkYarn, yarn, kubernetes,
+    // Tier 12: Spark Connect (requires gRPC protoc plugin - skipped for now)
+    // connectCommon, connect,
+    // Tier 13: Tools & Examples
+    tools, examples
   )
   .settings(
     name := "spark-parent",
@@ -315,6 +326,9 @@ lazy val core = (project in file("core"))
       Jetty.ee10Servlets % Provided,
       Jetty.ee10Plus % Provided,
       Jetty.ee10Proxy % Provided,
+      Jetty.compressionServer % Provided,
+      Jetty.compressionCommon % Provided,
+      Jetty.compressionGzip % Provided,
       // Jersey
       Jersey.server,
       Jersey.client,
@@ -718,5 +732,408 @@ lazy val hiveThriftserver = (project in file("sql/hive-thriftserver"))
       TestDeps.byteBuddyAgent % sbt.Test,
       TestDeps.selenium % sbt.Test,
       TestDeps.htmlunitDriver % sbt.Test
+    ) ++ TestDeps.common
+  )
+
+// =============================================================================
+// TIER 9: REPL
+// =============================================================================
+
+lazy val repl = (project in file("repl"))
+  .dependsOn(
+    core,
+    sql,
+    mllib % Runtime,
+    tags % "test->test",
+    core % "test->test"
+  )
+  .settings(sparkModuleSettings)
+  .settings(
+    name := "spark-repl",
+    libraryDependencies ++= Seq(
+      // Scala
+      Scala.library,
+      Scala.compiler,
+      Scala.reflect,
+      // Logging
+      Logging.julToSlf4j,
+      // Jetty (shaded by core)
+      Jetty.server,
+      Jetty.ee10Plus,
+      Jetty.util,
+      Jetty.http,
+      // Code generation
+      CodeGen.xbeanAsm,
+      // Test
+      TestDeps.scalacheck % sbt.Test,
+      TestDeps.mockitoCore % sbt.Test,
+      TestDeps.byteBuddy % sbt.Test,
+      TestDeps.byteBuddyAgent % sbt.Test
+    ) ++ TestDeps.common
+  )
+
+// =============================================================================
+// TIER 10: CONNECTORS
+// =============================================================================
+
+lazy val avro = (project in file("connector/avro"))
+  .dependsOn(
+    sql % Provided,
+    tags % "test->test",
+    core % "test->test",
+    catalyst % "test->test",
+    sql % "test->test"
+  )
+  .settings(sparkModuleSettings)
+  .settings(
+    name := "spark-avro",
+    libraryDependencies ++= Seq(
+      // Scala
+      Scala.parallelCollections,
+      // Compression (for Avro)
+      Compression.xz,
+      // Test
+      TestDeps.scalacheck % sbt.Test
+    ) ++ TestDeps.common
+  )
+
+lazy val protobuf = (project in file("connector/protobuf"))
+  .dependsOn(
+    sql % Provided,
+    tags % "test->test",
+    core % "test->test",
+    catalyst % "test->test",
+    sql % "test->test"
+  )
+  .settings(sparkModuleSettings)
+  .settings(Shading.protobufAssemblySettings)
+  .settings(
+    name := "spark-protobuf",
+    libraryDependencies ++= Seq(
+      // Scala
+      Scala.parallelCollections,
+      // Protobuf
+      Protobuf.java,
+      Protobuf.javaUtil,
+      // Test
+      TestDeps.scalacheck % sbt.Test
+    ) ++ TestDeps.common
+  )
+
+// Kafka token provider (base for Kafka connectors)
+lazy val kafkaTokenProvider = (project in file("connector/kafka-0-10-token-provider"))
+  .dependsOn(
+    core % Provided,
+    tags % "test->test",
+    core % "test->test"
+  )
+  .settings(sparkModuleSettings)
+  .settings(
+    name := "spark-token-provider-kafka-0-10",
+    libraryDependencies ++= Seq(
+      // Kafka
+      Kafka.clients,
+      // Hadoop
+      Hadoop.clientRuntime,
+      // Test
+      TestDeps.mockitoCore % sbt.Test,
+      TestDeps.byteBuddy % sbt.Test,
+      TestDeps.byteBuddyAgent % sbt.Test
+    ) ++ TestDeps.common
+  )
+
+// Kafka Streaming connector
+lazy val kafkaStreaming = (project in file("connector/kafka-0-10"))
+  .dependsOn(
+    kafkaTokenProvider,
+    streaming % Provided,
+    tags % "test->test",
+    core % "test->test",
+    streaming % "test->test"
+  )
+  .settings(sparkModuleSettings)
+  .settings(
+    name := "spark-streaming-kafka-0-10",
+    libraryDependencies ++= Seq(
+      // Scala
+      Scala.parallelCollections,
+      // Kafka
+      Kafka.clients,
+      Kafka.core % sbt.Test,
+      // ZooKeeper (test)
+      ZooKeeper.core % sbt.Test,
+      // Test
+      TestDeps.scalacheck % sbt.Test,
+      TestDeps.mockitoCore % sbt.Test,
+      TestDeps.byteBuddy % sbt.Test,
+      TestDeps.byteBuddyAgent % sbt.Test,
+      TestDeps.jmockJunit5 % sbt.Test
+    ) ++ TestDeps.common
+  )
+
+// Kafka SQL (Structured Streaming) connector
+lazy val kafkaSql = (project in file("connector/kafka-0-10-sql"))
+  .dependsOn(
+    kafkaTokenProvider,
+    sql % Provided,
+    tags % "test->test",
+    core % "test->test",
+    catalyst % "test->test",
+    sql % "test->test",
+    kafkaTokenProvider % "test->test"
+  )
+  .settings(sparkModuleSettings)
+  .settings(
+    name := "spark-sql-kafka-0-10",
+    libraryDependencies ++= Seq(
+      // Scala
+      Scala.parallelCollections,
+      // Kafka
+      Kafka.clients,
+      Kafka.core % sbt.Test,
+      // Utilities
+      Google.jsr305,
+      Commons.pool2,
+      // Hadoop (test)
+      Hadoop.minikdc % sbt.Test,
+      // ZooKeeper (test)
+      ZooKeeper.core % sbt.Test,
+      // Jetty (test)
+      Jetty.ee10Servlet % sbt.Test,
+      // Test
+      TestDeps.scalacheck % sbt.Test,
+      TestDeps.mockitoCore % sbt.Test,
+      TestDeps.byteBuddy % sbt.Test,
+      TestDeps.byteBuddyAgent % sbt.Test,
+      TestDeps.jmockJunit5 % sbt.Test
+    ) ++ TestDeps.common
+  )
+
+// =============================================================================
+// TIER 11: RESOURCE MANAGERS
+// =============================================================================
+
+// YARN Shuffle Service (network-yarn)
+lazy val networkYarn = (project in file("common/network-yarn"))
+  .dependsOn(
+    networkShuffle,
+    tags % Provided,
+    tags % "test->test"
+  )
+  .settings(sparkModuleSettings)
+  .settings(
+    name := "spark-network-yarn",
+    libraryDependencies ++= Seq(
+      // Hadoop
+      Hadoop.clientApi,
+      Hadoop.clientRuntime,
+      // Provided
+      Google.guava % Provided,
+      Logging.slf4jApi % Provided
+    ) ++ TestDeps.common
+  )
+
+// YARN Resource Manager
+lazy val yarn = (project in file("resource-managers/yarn"))
+  .dependsOn(
+    core,
+    tags % "test->test",
+    core % "test->test",
+    networkCommon % "test->test",
+    networkYarn % "test->test"
+  )
+  .settings(sparkModuleSettings)
+  .settings(
+    name := "spark-yarn",
+    libraryDependencies ++= Seq(
+      // Hadoop
+      Hadoop.clientApi,
+      Hadoop.clientRuntime,
+      Hadoop.clientMinicluster % sbt.Test,
+      // Guava (shaded by core, but needed for compile)
+      Google.guava,
+      // Jetty (shaded by core)
+      Jetty.server,
+      Jetty.ee10Plus,
+      Jetty.util,
+      Jetty.http,
+      Jetty.ee10Servlet,
+      Jetty.ee10Servlets,
+      // Test
+      ML.jaxbApi % sbt.Test,
+      Security.bouncycastleBcprov % sbt.Test,
+      Security.bouncycastleBcpkix % sbt.Test,
+      TestDeps.mockitoCore % sbt.Test,
+      TestDeps.byteBuddy % sbt.Test,
+      TestDeps.byteBuddyAgent % sbt.Test
+    ) ++ TestDeps.common
+  )
+
+// Kubernetes Resource Manager
+lazy val kubernetes = (project in file("resource-managers/kubernetes/core"))
+  .dependsOn(
+    core,
+    tags % "test->test",
+    core % "test->test"
+  )
+  .settings(sparkModuleSettings)
+  .settings(
+    name := "spark-kubernetes",
+    // Include volcano sources
+    Compile / unmanagedSourceDirectories += baseDirectory.value / "volcano" / "src" / "main" / "scala",
+    Test / unmanagedSourceDirectories += baseDirectory.value / "volcano" / "src" / "test" / "scala",
+    libraryDependencies ++= Seq(
+      // Kubernetes client
+      Kubernetes.client,
+      Kubernetes.volcanoModel,
+      Kubernetes.volcanoClient,
+      // Jackson YAML (required by k8s client but excluded)
+      Jackson.dataformatYaml,
+      // Guava (shaded by core)
+      Google.guava,
+      // Test
+      TestDeps.mockitoCore % sbt.Test,
+      TestDeps.byteBuddy % sbt.Test,
+      TestDeps.byteBuddyAgent % sbt.Test,
+      TestDeps.jmockJunit5 % sbt.Test
+    ) ++ TestDeps.common
+  )
+
+// =============================================================================
+// TIER 12: SPARK CONNECT
+// =============================================================================
+
+// Connect Common - shared protobuf definitions and gRPC stubs
+lazy val connectCommon = (project in file("sql/connect/common"))
+  .dependsOn(
+    sqlApi,
+    tags % "test->test"
+  )
+  .settings(sparkModuleSettings)
+  .settings(
+    name := "spark-connect-common",
+    // Protobuf configuration for Connect
+    Compile / PB.targets := Seq(
+      PB.gens.java(Versions.protobuf) -> (Compile / sourceManaged).value / "protobuf"
+    ),
+    Compile / PB.protoSources := Seq(baseDirectory.value / "src" / "main" / "protobuf"),
+    libraryDependencies ++= Seq(
+      // Scala
+      Scala.library,
+      // Protobuf
+      Protobuf.java,
+      // gRPC
+      Grpc.netty,
+      Grpc.protobuf,
+      Grpc.services,
+      Grpc.stub,
+      Grpc.inprocess,
+      // Netty for gRPC
+      Netty.codecHttp2,
+      Netty.handlerProxy,
+      Netty.transportNativeUnixCommon,
+      // Compression
+      Compression.zstd
+    ) ++ TestDeps.common
+  )
+
+// Connect Server
+lazy val connect = (project in file("sql/connect/server"))
+  .dependsOn(
+    connectCommon,
+    pipelines,
+    core % Provided,
+    catalyst % Provided,
+    sql % Provided,
+    mllib % Provided,
+    tags % Provided,
+    tags % "test->test",
+    core % "test->test",
+    catalyst % "test->test",
+    sql % "test->test",
+    pipelines % "test->test",
+    connectCommon % "test->test",
+    avro % sbt.Test,
+    protobuf % sbt.Test,
+    repl % "test->test"
+  )
+  .settings(sparkModuleSettings)
+  .settings(Shading.connectAssemblySettings)
+  .settings(
+    name := "spark-connect",
+    libraryDependencies ++= Seq(
+      // Scala
+      Scala.parallelCollections,
+      // Servlet
+      Servlet.jakartaServletApi,
+      Servlet.javaxServletApi,
+      // Google
+      Google.guava,
+      Google.failureaccess,
+      // Protobuf
+      Protobuf.java,
+      Protobuf.javaUtil,
+      // gRPC
+      Grpc.netty,
+      Grpc.protobuf,
+      Grpc.services,
+      Grpc.stub,
+      // Netty (provided - from core)
+      Netty.codecHttp2 % Provided,
+      Netty.handlerProxy % Provided,
+      Netty.transportNativeUnixCommon % Provided,
+      // Test
+      Database.h2 % sbt.Test,
+      TestDeps.scalacheck % sbt.Test,
+      TestDeps.mockitoCore % sbt.Test,
+      TestDeps.byteBuddy % sbt.Test,
+      TestDeps.byteBuddyAgent % sbt.Test
+    ) ++ TestDeps.common
+  )
+
+// =============================================================================
+// TIER 13: TOOLS & EXAMPLES
+// =============================================================================
+
+// Development tools (code generation, bytecode analysis)
+lazy val tools = (project in file("tools"))
+  .settings(sparkModuleSettings)
+  .settings(
+    name := "spark-tools",
+    publish / skip := true,
+    libraryDependencies ++= Seq(
+      // Scala
+      Scala.reflect,
+      Scala.compiler,
+      // Bytecode analysis
+      CodeGen.classutil,
+      CodeGen.asm,
+      CodeGen.asmCommons,
+      CodeGen.asmUtil
+    )
+  )
+
+// Examples (all dependencies provided)
+lazy val examples = (project in file("examples"))
+  .dependsOn(
+    core % Provided,
+    streaming % Provided,
+    mllib % Provided,
+    hive % Provided,
+    graphx % Provided,
+    kafkaStreaming % Provided,
+    kafkaSql % Provided
+  )
+  .settings(sparkModuleSettings)
+  .settings(
+    name := "spark-examples",
+    publish / skip := true,
+    libraryDependencies ++= Seq(
+      // CLI parser
+      Misc.scopt,
+      // All provided via dependencies
+      Commons.math3 % Provided,
+      // Test
+      TestDeps.scalacheck % sbt.Test
     ) ++ TestDeps.common
   )
