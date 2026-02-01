@@ -52,7 +52,7 @@ lazy val spark = (project in file("."))
     // Tier 11: Resource Managers
     networkYarn, yarn, kubernetes,
     // Tier 12: Spark Connect
-    connectCommon, connect,
+    connectCommon, connect, connectClientJvm, connectClientJdbc,
     // Tier 13: Tools & Examples
     tools, examples
   )
@@ -1102,6 +1102,56 @@ lazy val connect = (project in file("sql/connect/server"))
       TestDeps.byteBuddy % sbt.Test,
       TestDeps.byteBuddyAgent % sbt.Test
     ) ++ TestDeps.common
+  )
+
+// Connect Client JVM - Thin client for Spark Connect
+lazy val connectClientJvm = (project in file("sql/connect/client/jvm"))
+  .dependsOn(
+    connectCommon,
+    sqlApi,
+    connectShims,
+    sketch,
+    tags % "test->test",
+    sqlApi % "test->test",
+    commonUtils % "test->test"
+  )
+  .settings(sparkModuleSettings)
+  .settings(Shading.connectClientAssemblySettings)
+  .settings(
+    name := "spark-connect-client-jvm",
+    libraryDependencies ++= Seq(
+      // Scala
+      Scala.compiler,
+      Scala.xml,
+      // Protobuf (compile scope - not provided, for shading)
+      Protobuf.java,
+      Protobuf.javaUtil,
+      // Google
+      Google.guava,
+      Google.failureaccess,
+      // Compression
+      Compression.zstd,
+      // REPL support (provided - optional for Connect shell)
+      Ammonite.core % Provided,
+      Semanticdb.shared % Provided,
+      // Test
+      Commons.io % sbt.Test,
+      TestDeps.scalacheck % sbt.Test,
+      Mima.core % sbt.Test
+    ) ++ TestDeps.common
+  )
+
+// Connect Client JDBC - JDBC driver for Spark Connect
+lazy val connectClientJdbc = (project in file("sql/connect/client/jdbc"))
+  .dependsOn(
+    connectClientJvm,
+    connectClientJvm % "test->test"
+  )
+  .settings(sparkModuleSettings)
+  .settings(Shading.connectClientAssemblySettings)
+  .settings(
+    name := "spark-connect-client-jdbc",
+    libraryDependencies ++= TestDeps.common
   )
 
 // =============================================================================

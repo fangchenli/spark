@@ -221,6 +221,7 @@ object Versions {
   val roaringBitmap: String = get("roaring.bitmap.version")
   val univocity: String = get("univocity.version")
   val ammonite: String = get("ammonite.version")
+  val semanticdb: String = get("semanticdb.version")
 
   // ===== MIMA =====
   val mima: String = get("mima.version")

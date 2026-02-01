@@ -488,6 +488,24 @@ object Dependencies {
     val volcanoClient = "io.fabric8" % "volcano-client" % Versions.kubernetesClient
   }
 
+  // ===== CONNECT CLIENT =====
+  object Ammonite {
+    // Exclude jline jars in favor of the bundled jline from scala-compiler
+    val core = ("com.lihaoyi" % s"ammonite_${Versions.scala}" % Versions.ammonite).excludeAll(
+      ExclusionRule(organization = "org.jline")
+    )
+  }
+
+  object Semanticdb {
+    val shared = ("org.scalameta" %% "semanticdb-shared" % Versions.semanticdb).excludeAll(
+      ExclusionRule(organization = "org.scala-lang", name = "scalap")
+    )
+  }
+
+  object Mima {
+    val core = "com.typesafe" %% "mima-core" % Versions.mima
+  }
+
   // ===== COMMON EXCLUSION RULES =====
   object Exclusions {
     val groovy = ExclusionRule(organization = "org.codehaus.groovy")
