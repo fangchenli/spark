@@ -336,21 +336,21 @@ lazy val core = (project in file("core"))
       Kryo.chill,
       Kryo.chillJava,
       Kryo.objenesis,
-      // Jetty (for shading)
-      Jetty.io % Provided,
-      Jetty.http % Provided,
-      Jetty.server % Provided,
-      Jetty.security % Provided,
-      Jetty.util % Provided,
-      Jetty.client % Provided,
-      Jetty.session % Provided,
-      Jetty.ee10Servlet % Provided,
-      Jetty.ee10Servlets % Provided,
-      Jetty.ee10Plus % Provided,
-      Jetty.ee10Proxy % Provided,
-      Jetty.compressionServer % Provided,
-      Jetty.compressionCommon % Provided,
-      Jetty.compressionGzip % Provided,
+      // Jetty (for shading - compile scope, will be shaded into assembly)
+      Jetty.io,
+      Jetty.http,
+      Jetty.server,
+      Jetty.security,
+      Jetty.util,
+      Jetty.client,
+      Jetty.session,
+      Jetty.ee10Servlet,
+      Jetty.ee10Servlets,
+      Jetty.ee10Plus,
+      Jetty.ee10Proxy,
+      Jetty.compressionServer,
+      Jetty.compressionCommon,
+      Jetty.compressionGzip,
       // Jersey
       Jersey.server,
       Jersey.client,
@@ -1389,7 +1389,7 @@ lazy val kafkaAssembly = (project in file("connector/kafka-0-10-assembly"))
     streaming % Provided
   )
   .settings(sparkModuleSettings)
-  .settings(Shading.connectorAssemblySettings)
+  .settings(Shading.kafkaAssemblySettings)
   .settings(
     name := "spark-streaming-kafka-0-10-assembly",
     publish / skip := true,
@@ -1397,6 +1397,13 @@ lazy val kafkaAssembly = (project in file("connector/kafka-0-10-assembly"))
     Compile / sources := Seq.empty,
     Test / sources := Seq.empty,
     libraryDependencies ++= Seq(
+      // JJWT and Jackson - needed for Kafka SASL/OAuth (from core, which is Provided)
+      Security.jjwtApi,
+      Security.jjwtImpl,
+      Security.jjwtJackson,
+      Jackson.databind,
+      Jackson.core,
+      Jackson.annotations,
       // Mark as provided - already in Spark assembly
       Commons.codec % Provided,
       Commons.lang2 % Provided,
@@ -1423,7 +1430,7 @@ lazy val kinesisAslAssembly = (project in file("connector/kinesis-asl-assembly")
     streaming % Provided
   )
   .settings(sparkModuleSettings)
-  .settings(Shading.connectorAssemblySettings)
+  .settings(Shading.kinesisAssemblySettings)
   .settings(
     name := "spark-streaming-kinesis-asl-assembly",
     publish / skip := true,
