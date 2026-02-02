@@ -156,7 +156,7 @@ process_args () {
 
             -D*) addJava "$1" && shift ;;
             -J*) addJava "${1:2}" && shift ;;
-            -P*) enableProfile "$1" && shift ;;
+            -P*) shift ;;  # Profile flags ignored - native SBT doesn't need them
               *) addResidual "$1" && shift ;;
     esac
   done

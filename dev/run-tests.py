@@ -146,10 +146,15 @@ def exec_maven(mvn_args=()):
 
 
 def exec_sbt(sbt_args=()):
-    """Will call SBT in the current directory with the list of mvn_args passed
-    in and returns the subprocess for any further processing"""
+    """Will call SBT in the current directory with the list of sbt_args passed
+    in and returns the subprocess for any further processing.
 
-    sbt_cmd = [os.path.join(SPARK_HOME, "build", "sbt")] + sbt_args
+    Note: Maven-style profile flags (-P*) are filtered out as native SBT
+    doesn't need them - all modules are always available.
+    """
+    # Filter out -P profile flags (not needed for native SBT)
+    filtered_args = [arg for arg in sbt_args if not arg.startswith("-P")]
+    sbt_cmd = [os.path.join(SPARK_HOME, "build", "sbt")] + filtered_args
 
     sbt_output_filter = re.compile(
         b"^.*[info].*Resolving" + b"|" + b"^.*[warn].*Merging" + b"|" + b"^.*[info].*Including"

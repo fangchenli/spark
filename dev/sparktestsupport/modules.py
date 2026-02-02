@@ -37,7 +37,7 @@ class Module(object):
         name,
         dependencies,
         source_file_regexes,
-        build_profile_flags=(),
+        build_profile_flags=[],
         environ=None,
         sbt_test_goals=(),
         python_test_goals=(),
@@ -120,7 +120,7 @@ utils_java = Module(
         "common/utils-java/",
     ],
     sbt_test_goals=[
-        "common-utils-java/test",
+        "commonUtilsJava/test",
     ],
 )
 
@@ -131,7 +131,7 @@ utils = Module(
         "common/utils/",
     ],
     sbt_test_goals=[
-        "common-utils/test",
+        "commonUtils/test",
     ],
 )
 
@@ -153,7 +153,7 @@ network_common = Module(
         "common/network-common/",
     ],
     sbt_test_goals=[
-        "network-common/test",
+        "networkCommon/test",
     ],
 )
 
@@ -164,7 +164,7 @@ network_shuffle = Module(
         "common/network-shuffle/",
     ],
     sbt_test_goals=[
-        "network-shuffle/test",
+        "networkShuffle/test",
     ],
 )
 
@@ -263,9 +263,6 @@ hive = Module(
         "sql/hive/",
         "bin/spark-sql",
     ],
-    build_profile_flags=[
-        "-Phive",
-    ],
     sbt_test_goals=[
         "hive/test",
     ],
@@ -290,11 +287,8 @@ hive_thriftserver = Module(
         "sql/hive-thriftserver",
         "sbin/start-thriftserver.sh",
     ],
-    build_profile_flags=[
-        "-Phive-thriftserver",
-    ],
     sbt_test_goals=[
-        "hive-thriftserver/test",
+        "hiveThriftserver/test",
     ],
 )
 
@@ -316,14 +310,13 @@ sql_kafka = Module(
         "connector/kafka-0-10-sql",
     ],
     sbt_test_goals=[
-        "sql-kafka-0-10/test",
+        "kafkaSql/test",
     ],
 )
 
 profiler = Module(
     name="profiler",
     dependencies=[],
-    build_profile_flags=["-Pjvm-profiler"],
     source_file_regexes=[
         "connector/profiler",
     ],
@@ -372,12 +365,9 @@ streaming_kinesis_asl = Module(
         "connector/kinesis-asl/",
         "connector/kinesis-asl-assembly/",
     ],
-    build_profile_flags=[
-        "-Pkinesis-asl",
-    ],
     environ={"ENABLE_KINESIS_TESTS": "0"},
     sbt_test_goals=[
-        "streaming-kinesis-asl/test",
+        "kinesisAsl/test",
     ],
 )
 
@@ -391,7 +381,7 @@ streaming_kafka_0_10 = Module(
         "connector/kafka-0-10-assembly",
         "connector/kafka-0-10-token-provider",
     ],
-    sbt_test_goals=["streaming-kafka-0-10/test", "token-provider-kafka-0-10/test"],
+    sbt_test_goals=["kafkaStreaming/test", "kafkaTokenProvider/test"],
 )
 
 
@@ -402,7 +392,7 @@ mllib_local = Module(
         "mllib-local",
     ],
     sbt_test_goals=[
-        "mllib-local/test",
+        "mlLibLocal/test",
     ],
 )
 
@@ -436,8 +426,8 @@ connect = Module(
     ],
     sbt_test_goals=[
         "connect/test",
-        "connect-client-jvm/test",
-        "connect-client-jdbc/test",
+        "connectClientJvm/test",
+        "connectClientJdbc/test",
     ],
 )
 
@@ -1623,10 +1613,9 @@ yarn = Module(
         "resource-managers/yarn/",
         "common/network-yarn/",
     ],
-    build_profile_flags=["-Pyarn"],
     sbt_test_goals=[
         "yarn/test",
-        "network-yarn/test",
+        "networkYarn/test",
     ],
     test_tags=["org.apache.spark.tags.ExtendedYarnTest"],
 )
@@ -1635,7 +1624,6 @@ kubernetes = Module(
     name="kubernetes",
     dependencies=[],
     source_file_regexes=["resource-managers/kubernetes"],
-    build_profile_flags=["-Pkubernetes", "-Pvolcano"],
     sbt_test_goals=["kubernetes/test"],
 )
 
@@ -1643,14 +1631,12 @@ hadoop_cloud = Module(
     name="hadoop-cloud",
     dependencies=[],
     source_file_regexes=["hadoop-cloud"],
-    build_profile_flags=["-Phadoop-cloud"],
-    sbt_test_goals=["hadoop-cloud/test"],
+    sbt_test_goals=["hadoopCloud/test"],
 )
 
 spark_ganglia_lgpl = Module(
     name="spark-ganglia-lgpl",
     dependencies=[],
-    build_profile_flags=["-Pspark-ganglia-lgpl"],
     source_file_regexes=[
         "connector/spark-ganglia-lgpl",
     ],
@@ -1659,9 +1645,8 @@ spark_ganglia_lgpl = Module(
 docker_integration_tests = Module(
     name="docker-integration-tests",
     dependencies=[sql],
-    build_profile_flags=["-Pdocker-integration-tests"],
     source_file_regexes=["connector/docker-integration-tests"],
-    sbt_test_goals=["docker-integration-tests/test"],
+    sbt_test_goals=["dockerIntegrationTests/test"],
     environ=None
     if "GITHUB_ACTIONS" not in os.environ
     else {"ENABLE_DOCKER_INTEGRATION_TESTS": "1"},
@@ -1674,10 +1659,6 @@ root = Module(
     name="root",
     dependencies=[build, core],  # Changes to build should trigger all tests.
     source_file_regexes=[],
-    # In order to run all of the tests, enable every test profile:
-    build_profile_flags=list(
-        set(itertools.chain.from_iterable(m.build_profile_flags for m in all_modules))
-    ),
     sbt_test_goals=[
         "test",
     ],
