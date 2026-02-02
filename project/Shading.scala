@@ -35,7 +35,7 @@ object Shading {
     case m if m.toLowerCase(Locale.ROOT).endsWith("manifest.mf") => MergeStrategy.discard
     case m if m.toLowerCase(Locale.ROOT).matches("meta-inf.*\\.sf$") => MergeStrategy.discard
     case m if m.toLowerCase(Locale.ROOT).startsWith("meta-inf/services/") => MergeStrategy.filterDistinctLines
-    case m if m.toLowerCase(Locale.ROOT).endsWith(".proto") => MergeStrategy.discard
+    case m if m.toLowerCase(Locale.ROOT).endsWith(".proto") => MergeStrategy.first
     case m if m.toLowerCase(Locale.ROOT).endsWith("module-info.class") => MergeStrategy.discard
     case "log4j2.properties" => MergeStrategy.discard
     case "reference.conf" => MergeStrategy.concat
@@ -66,9 +66,86 @@ object Shading {
     assembly / assemblyOption := (assembly / assemblyOption).value.withIncludeScala(false)
   )
 
+  // Exact artifact names to include in connect-client assembly (matches Maven's artifactSet.includes)
+  // See sql/connect/client/jvm/pom.xml for the canonical list
+  // Jar names follow pattern: {artifactId}-{version}.jar or {artifactId}_{scalaVersion}-{version}.jar
+  private val connectClientIncludedArtifacts = Set(
+    // com.google.guava:* - Guava and related
+    "guava", "failureaccess", "listenablefuture",
+    // com.google.android:* - Android annotations
+    "annotations",
+    // com.google.api.grpc:* - gRPC protos
+    "proto-google-common-protos",
+    // com.google.code.gson:* - JSON
+    "gson",
+    // com.google.protobuf:* - Protocol Buffers
+    "protobuf-java",
+    // com.google.flatbuffers:* - FlatBuffers (used by Arrow)
+    "flatbuffers-java",
+    // io.grpc:* - gRPC (only core modules)
+    "grpc-api", "grpc-context", "grpc-core", "grpc-netty",
+    "grpc-protobuf", "grpc-protobuf-lite", "grpc-stub", "grpc-util",
+    "grpc-services", "grpc-inprocess",
+    // io.netty:* - Netty (exact 12 modules matching Maven's shaded jar)
+    "netty-buffer", "netty-codec-base", "netty-codec-compression",
+    "netty-codec-http", "netty-codec-http2", "netty-codec-socks",
+    "netty-common", "netty-handler", "netty-handler-proxy",
+    "netty-resolver", "netty-transport", "netty-transport-native-unix-common",
+    // io.perfmark:* - Performance tracing
+    "perfmark-api",
+    // org.apache.arrow:* - Arrow
+    "arrow-format", "arrow-memory-core", "arrow-memory-netty", "arrow-vector",
+    // org.codehaus.mojo:* - Animal sniffer annotations
+    "animal-sniffer-annotations",
+    // org.apache.spark:* - Spark modules included in assembly (matches Maven's artifactSet)
+    // Note: spark-connect-shims is intentionally excluded (same as Maven)
+    "spark-connect-client-jvm", "spark-connect-common", "spark-sql-api"
+  )
+
+  // Match jar names like "netty-transport-4.2.9.Final.jar" but not "netty-transport-classes-epoll-4.2.9.Final.jar"
+  // Pattern: artifactId followed by "-" + digit (version) or "_" + digit (scala version)
+  private def isConnectClientIncludedJar(jarName: String): Boolean = {
+    connectClientIncludedArtifacts.exists { artifact =>
+      if (jarName.startsWith(artifact)) {
+        val suffix = jarName.substring(artifact.length)
+        // After artifact name, expect: -VERSION or _SCALA-VERSION
+        suffix.startsWith("-") && suffix.length > 1 && suffix.charAt(1).isDigit ||
+        suffix.startsWith("_") && suffix.length > 1 && suffix.charAt(1).isDigit
+      } else false
+    }
+  }
+
+  // Connect client merge strategy - also exclude native libs
+  private lazy val connectClientMergeStrategy: String => sbtassembly.MergeStrategy = {
+    // Exclude native libraries - they bloat the jar and aren't needed for most use cases
+    case m if m.toLowerCase(Locale.ROOT).endsWith(".so") => MergeStrategy.discard
+    case m if m.toLowerCase(Locale.ROOT).endsWith(".dylib") => MergeStrategy.discard
+    case m if m.toLowerCase(Locale.ROOT).endsWith(".dll") => MergeStrategy.discard
+    case m if m.toLowerCase(Locale.ROOT).endsWith(".jnilib") => MergeStrategy.discard
+    case m => coreMergeStrategy(m)
+  }
+
   lazy val connectClientAssemblySettings: Seq[Setting[_]] = Seq(
-    assembly / assemblyMergeStrategy := coreMergeStrategy,
-    assembly / assemblyOption := (assembly / assemblyOption).value.withIncludeScala(false)
+    assembly / assemblyMergeStrategy := connectClientMergeStrategy,
+    assembly / assemblyOption := (assembly / assemblyOption).value.withIncludeScala(false),
+    // Match Maven's artifactSet.includes - only include specific dependencies
+    assembly / assemblyExcludedJars := {
+      val cp = (assembly / fullClasspath).value
+      cp.filterNot(jar => isConnectClientIncludedJar(jar.data.getName))
+    },
+    // Shade rules to match Maven's relocations (order matters - more specific rules first)
+    assembly / assemblyShadeRules := Seq(
+      // Guava gets special treatment - shaded to connect.guava
+      ShadeRule.rename("com.google.common.**" -> s"$sparkShadePackage.connect.guava.@1").inAll,
+      // Other com.google packages
+      ShadeRule.rename("com.google.**" -> s"$sparkShadePackage.com.google.@1").inAll,
+      ShadeRule.rename("io.grpc.**" -> s"$sparkShadePackage.io.grpc.@1").inAll,
+      ShadeRule.rename("io.netty.**" -> s"$sparkShadePackage.io.netty.@1").inAll,
+      ShadeRule.rename("io.perfmark.**" -> s"$sparkShadePackage.io.perfmark.@1").inAll,
+      ShadeRule.rename("org.codehaus.**" -> s"$sparkShadePackage.org.codehaus.@1").inAll,
+      ShadeRule.rename("org.apache.arrow.**" -> s"$sparkShadePackage.org.apache.arrow.@1").inAll,
+      ShadeRule.rename("android.annotation.**" -> s"$sparkShadePackage.android.annotation.@1").inAll
+    )
   )
 
   lazy val protobufAssemblySettings: Seq[Setting[_]] = Seq(

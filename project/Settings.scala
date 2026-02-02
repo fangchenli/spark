@@ -295,6 +295,7 @@ object Settings {
       dependencyOverrides ++= Seq(
         Dependencies.Logging.slf4jApi,
         Dependencies.Google.guava,
+        Dependencies.Google.gson,
         Dependencies.Avro.core,
         Dependencies.Misc.jline,
         Dependencies.Jackson.core,
