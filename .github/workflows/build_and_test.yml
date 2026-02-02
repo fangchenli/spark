@@ -336,14 +336,14 @@ jobs:
           build/apache-maven-*
           build/*.jar
           ~/.sbt
-        key: build-${{ hashFiles('**/pom.xml', 'project/build.properties', 'build/mvn', 'build/sbt', 'build/sbt-launch-lib.bash', 'build/spark-build-info') }}
+        key: build-${{ hashFiles('project/build.properties', 'build.sbt', 'project/*.scala', 'versions.properties', 'build/sbt', 'build/sbt-launch-lib.bash', 'build/spark-build-info') }}
         restore-keys: |
           build-
     - name: Cache Coursier local repository
       uses: actions/cache@v4
       with:
         path: ~/.cache/coursier
-        key: ${{ matrix.java }}-${{ matrix.hadoop }}-coursier-${{ hashFiles('**/pom.xml', '**/plugins.sbt') }}
+        key: ${{ matrix.java }}-${{ matrix.hadoop }}-coursier-${{ hashFiles('build.sbt', 'project/*.scala', 'versions.properties', '**/plugins.sbt') }}
         restore-keys: |
           ${{ matrix.java }}-${{ matrix.hadoop }}-coursier-
     - name: Free up disk space
@@ -603,14 +603,14 @@ jobs:
           build/apache-maven-*
           build/*.jar
           ~/.sbt
-        key: build-${{ hashFiles('**/pom.xml', 'project/build.properties', 'build/mvn', 'build/sbt', 'build/sbt-launch-lib.bash', 'build/spark-build-info') }}
+        key: build-${{ hashFiles('project/build.properties', 'build.sbt', 'project/*.scala', 'versions.properties', 'build/sbt', 'build/sbt-launch-lib.bash', 'build/spark-build-info') }}
         restore-keys: |
           build-
     - name: Cache Coursier local repository
       uses: actions/cache@v4
       with:
         path: ~/.cache/coursier
-        key: pyspark-coursier-${{ hashFiles('**/pom.xml', '**/plugins.sbt') }}
+        key: pyspark-coursier-${{ hashFiles('build.sbt', 'project/*.scala', 'versions.properties', '**/plugins.sbt') }}
         restore-keys: |
           pyspark-coursier-
     - name: Free up disk space
@@ -740,14 +740,14 @@ jobs:
           build/apache-maven-*
           build/*.jar
           ~/.sbt
-        key: build-${{ hashFiles('**/pom.xml', 'project/build.properties', 'build/mvn', 'build/sbt', 'build/sbt-launch-lib.bash', 'build/spark-build-info') }}
+        key: build-${{ hashFiles('project/build.properties', 'build.sbt', 'project/*.scala', 'versions.properties', 'build/sbt', 'build/sbt-launch-lib.bash', 'build/spark-build-info') }}
         restore-keys: |
           build-
     - name: Cache Coursier local repository
       uses: actions/cache@v4
       with:
         path: ~/.cache/coursier
-        key: sparkr-coursier-${{ hashFiles('**/pom.xml', '**/plugins.sbt') }}
+        key: sparkr-coursier-${{ hashFiles('build.sbt', 'project/*.scala', 'versions.properties', '**/plugins.sbt') }}
         restore-keys: |
           sparkr-coursier-
     - name: Free up disk space
@@ -868,14 +868,14 @@ jobs:
           build/apache-maven-*
           build/*.jar
           ~/.sbt
-        key: build-${{ hashFiles('**/pom.xml', 'project/build.properties', 'build/mvn', 'build/sbt', 'build/sbt-launch-lib.bash', 'build/spark-build-info') }}
+        key: build-${{ hashFiles('project/build.properties', 'build.sbt', 'project/*.scala', 'versions.properties', 'build/sbt', 'build/sbt-launch-lib.bash', 'build/spark-build-info') }}
         restore-keys: |
           build-
     - name: Cache Coursier local repository
       uses: actions/cache@v4
       with:
         path: ~/.cache/coursier
-        key: docs-coursier-${{ hashFiles('**/pom.xml', '**/plugins.sbt') }}
+        key: docs-coursier-${{ hashFiles('build.sbt', 'project/*.scala', 'versions.properties', '**/plugins.sbt') }}
         restore-keys: |
           docs-coursier-
     - name: Cache Maven local repository
@@ -1060,14 +1060,14 @@ jobs:
           build/apache-maven-*
           build/*.jar
           ~/.sbt
-        key: build-${{ hashFiles('**/pom.xml', 'project/build.properties', 'build/mvn', 'build/sbt', 'build/sbt-launch-lib.bash', 'build/spark-build-info') }}
+        key: build-${{ hashFiles('project/build.properties', 'build.sbt', 'project/*.scala', 'versions.properties', 'build/sbt', 'build/sbt-launch-lib.bash', 'build/spark-build-info') }}
         restore-keys: |
           build-
     - name: Cache Coursier local repository
       uses: actions/cache@v4
       with:
         path: ~/.cache/coursier
-        key: docs-coursier-${{ hashFiles('**/pom.xml', '**/plugins.sbt') }}
+        key: docs-coursier-${{ hashFiles('build.sbt', 'project/*.scala', 'versions.properties', '**/plugins.sbt') }}
         restore-keys: |
           docs-coursier-
     - name: Cache Maven local repository
@@ -1199,14 +1199,14 @@ jobs:
           build/apache-maven-*
           build/*.jar
           ~/.sbt
-        key: build-${{ hashFiles('**/pom.xml', 'project/build.properties', 'build/mvn', 'build/sbt', 'build/sbt-launch-lib.bash', 'build/spark-build-info') }}
+        key: build-${{ hashFiles('project/build.properties', 'build.sbt', 'project/*.scala', 'versions.properties', 'build/sbt', 'build/sbt-launch-lib.bash', 'build/spark-build-info') }}
         restore-keys: |
           build-
     - name: Cache Coursier local repository
       uses: actions/cache@v4
       with:
         path: ~/.cache/coursier
-        key: tpcds-coursier-${{ hashFiles('**/pom.xml', '**/plugins.sbt') }}
+        key: tpcds-coursier-${{ hashFiles('build.sbt', 'project/*.scala', 'versions.properties', '**/plugins.sbt') }}
         restore-keys: |
           tpcds-coursier-
     - name: Install Java ${{ inputs.java }}
@@ -1317,14 +1317,14 @@ jobs:
           build/apache-maven-*
           build/*.jar
           ~/.sbt
-        key: build-${{ hashFiles('**/pom.xml', 'project/build.properties', 'build/mvn', 'build/sbt', 'build/sbt-launch-lib.bash', 'build/spark-build-info') }}
+        key: build-${{ hashFiles('project/build.properties', 'build.sbt', 'project/*.scala', 'versions.properties', 'build/sbt', 'build/sbt-launch-lib.bash', 'build/spark-build-info') }}
         restore-keys: |
           build-
     - name: Cache Coursier local repository
       uses: actions/cache@v4
       with:
         path: ~/.cache/coursier
-        key: docker-integration-coursier-${{ hashFiles('**/pom.xml', '**/plugins.sbt') }}
+        key: docker-integration-coursier-${{ hashFiles('build.sbt', 'project/*.scala', 'versions.properties', '**/plugins.sbt') }}
         restore-keys: |
           docker-integration-coursier-
     - name: Install Java ${{ inputs.java }}
@@ -1385,14 +1385,14 @@ jobs:
             build/apache-maven-*
             build/*.jar
             ~/.sbt
-          key: build-${{ hashFiles('**/pom.xml', 'project/build.properties', 'build/mvn', 'build/sbt', 'build/sbt-launch-lib.bash', 'build/spark-build-info') }}
+          key: build-${{ hashFiles('project/build.properties', 'build.sbt', 'project/*.scala', 'versions.properties', 'build/sbt', 'build/sbt-launch-lib.bash', 'build/spark-build-info') }}
           restore-keys: |
             build-
       - name: Cache Coursier local repository
         uses: actions/cache@v4
         with:
           path: ~/.cache/coursier
-          key: k8s-integration-coursier-${{ hashFiles('**/pom.xml', '**/plugins.sbt') }}
+          key: k8s-integration-coursier-${{ hashFiles('build.sbt', 'project/*.scala', 'versions.properties', '**/plugins.sbt') }}
           restore-keys: |
             k8s-integration-coursier-
       - name: Free up disk space
@@ -1436,7 +1436,7 @@ jobs:
             kubectl apply -f https://raw.githubusercontent.com/volcano-sh/volcano/v1.13.1/installer/volcano-development.yaml || true
           fi
           eval $(minikube docker-env)
-          build/sbt -Phadoop-3 -Psparkr -Pkubernetes -Pvolcano -Pkubernetes-integration-tests -Dspark.kubernetes.test.volcanoMaxConcurrencyJobNum=1 -Dtest.exclude.tags=local "kubernetes-integration-tests/test"
+          build/sbt -Dspark.kubernetes.test.volcanoMaxConcurrencyJobNum=1 -Dtest.exclude.tags=local "kubernetesIntegrationTests/test"
       - name: Upload Spark on K8S integration tests log files
         if: ${{ !success() }}
         uses: actions/upload-artifact@v4

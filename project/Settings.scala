@@ -238,9 +238,28 @@ object Settings {
   )
 
   // ===== PUBLISHING SETTINGS =====
+  // These settings prepare the build for potential future SBT-based publishing to Maven Central.
+  // Currently, releases use Maven (dev/create-release/release-build.sh), but this infrastructure
+  // enables future migration to SBT publishing via:
+  // - sbt-ci-release: Automated CI publishing with git-based versioning (https://github.com/sbt/sbt-ci-release)
+  // - sbt-pgp + Sonatype Central Portal: Manual control with explicit versioning (https://www.scala-sbt.org/1.x/docs/Using-Sonatype.html)
   lazy val publishSettings: Seq[Setting[_]] = Seq(
     publishMavenStyle := true,
-    publish / skip := false
+    publish / skip := false,
+
+    // POM metadata required for Maven Central
+    homepage := Some(url("https://spark.apache.org/")),
+    licenses := Seq("Apache-2.0" -> url("https://www.apache.org/licenses/LICENSE-2.0.html")),
+    scmInfo := Some(
+      ScmInfo(
+        url("https://github.com/apache/spark"),
+        "scm:git:git@github.com:apache/spark.git",
+        Some("scm:git:https://gitbox.apache.org/repos/asf/spark.git")
+      )
+    ),
+
+    // Don't include repository info in published POMs
+    pomIncludeRepository := { _ => false }
   )
 
   // ===== COMMON SETTINGS =====

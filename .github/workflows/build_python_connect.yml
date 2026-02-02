@@ -41,14 +41,14 @@ jobs:
             build/apache-maven-*
             build/*.jar
             ~/.sbt
-          key: build-spark-connect-python-only-${{ hashFiles('**/pom.xml', 'project/build.properties', 'build/mvn', 'build/sbt', 'build/sbt-launch-lib.bash', 'build/spark-build-info') }}
+          key: build-spark-connect-python-only-${{ hashFiles('project/build.properties', 'build.sbt', 'project/*.scala', 'versions.properties', 'build/sbt', 'build/sbt-launch-lib.bash', 'build/spark-build-info') }}
           restore-keys: |
             build-spark-connect-python-only-
       - name: Cache Coursier local repository
         uses: actions/cache@v4
         with:
           path: ~/.cache/coursier
-          key: coursier-build-spark-connect-python-only-${{ hashFiles('**/pom.xml') }}
+          key: coursier-build-spark-connect-python-only-${{ hashFiles('build.sbt', 'project/*.scala', 'versions.properties') }}
           restore-keys: |
             coursier-build-spark-connect-python-only-
       - name: Install Java 17
@@ -63,7 +63,7 @@ jobs:
           architecture: x64
       - name: Build Spark
         run: |
-          ./build/sbt -Phive Test/package
+          ./build/sbt Test/package
       - name: Install pure Python package (pyspark-client)
         env:
           SPARK_TESTING: 1

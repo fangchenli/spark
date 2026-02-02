@@ -74,3 +74,18 @@ addSbtPlugin("com.thesamet" % "sbt-protoc" % getVersion("sbt.protoc.version"))
 addSbtPlugin("com.here.platform" % "sbt-bom" % getVersion("sbt.bom.version"))
 
 addSbtPlugin("ch.epfl.scala" % "sbt-bloop" % getVersion("sbt.bloop.version"))
+
+// ===== PUBLISHING TO MAVEN CENTRAL (future) =====
+// Currently, releases use Maven (dev/create-release/release-build.sh).
+// Two options for future SBT-based publishing:
+//
+// Option 1: sbt-ci-release (recommended for CI automation)
+// - Bundles sbt-pgp, sbt-dynver (git-based versioning), and sbt-git
+// - Automatic snapshot/release publishing based on git tags
+// - See: https://github.com/sbt/sbt-ci-release
+// addSbtPlugin("com.github.sbt" % "sbt-ci-release" % getVersion("sbt.ci.release.version"))
+//
+// Option 2: Manual with sbt-pgp (more control, explicit versioning)
+// - Use: sbt publishSigned sonaUpload sonaRelease
+// - See: https://www.scala-sbt.org/1.x/docs/Using-Sonatype.html
+// addSbtPlugin("com.github.sbt" % "sbt-pgp" % getVersion("sbt.pgp.version"))

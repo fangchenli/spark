@@ -126,7 +126,7 @@ jobs:
             build/apache-maven-*
             build/*.jar
             ~/.sbt
-          key: build-${{ hashFiles('**/pom.xml', 'project/build.properties', 'build/mvn', 'build/sbt', 'build/sbt-launch-lib.bash', 'build/spark-build-info') }}
+          key: build-${{ hashFiles('project/build.properties', 'build.sbt', 'project/*.scala', 'versions.properties', 'build/sbt', 'build/sbt-launch-lib.bash', 'build/spark-build-info') }}
           restore-keys: |
             build-
       - name: Cache Coursier local repository
@@ -135,7 +135,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/coursier
-          key: pyspark-coursier-${{ hashFiles('**/pom.xml', '**/plugins.sbt') }}
+          key: pyspark-coursier-${{ hashFiles('build.sbt', 'project/*.scala', 'versions.properties', '**/plugins.sbt') }}
           restore-keys: |
             pyspark-coursier-
       - name: Install Java ${{ matrix.java }}

@@ -89,14 +89,14 @@ jobs:
             build/apache-maven-*
             build/*.jar
             ~/.sbt
-          key: build-${{ hashFiles('**/pom.xml', 'project/build.properties', 'build/mvn', 'build/sbt', 'build/sbt-launch-lib.bash', 'build/spark-build-info') }}
+          key: build-${{ hashFiles('project/build.properties', 'build.sbt', 'project/*.scala', 'versions.properties', 'build/sbt', 'build/sbt-launch-lib.bash', 'build/spark-build-info') }}
           restore-keys: |
             build-
       - name: Cache Coursier local repository
         uses: actions/cache@v4
         with:
           path: ~/.cache/coursier
-          key: benchmark-coursier-${{ inputs.jdk }}-${{ hashFiles('**/pom.xml', '**/plugins.sbt') }}
+          key: benchmark-coursier-${{ inputs.jdk }}-${{ hashFiles('build.sbt', 'project/*.scala', 'versions.properties', '**/plugins.sbt') }}
           restore-keys: |
             benchmark-coursier-${{ inputs.jdk }}
       - name: Cache TPC-DS generated data
@@ -161,14 +161,14 @@ jobs:
           build/apache-maven-*
           build/*.jar
           ~/.sbt
-        key: build-${{ hashFiles('**/pom.xml', 'project/build.properties', 'build/mvn', 'build/sbt', 'build/sbt-launch-lib.bash', 'build/spark-build-info') }}
+        key: build-${{ hashFiles('project/build.properties', 'build.sbt', 'project/*.scala', 'versions.properties', 'build/sbt', 'build/sbt-launch-lib.bash', 'build/spark-build-info') }}
         restore-keys: |
           build-
     - name: Cache Coursier local repository
       uses: actions/cache@v4
       with:
         path: ~/.cache/coursier
-        key: benchmark-coursier-${{ inputs.jdk }}-${{ hashFiles('**/pom.xml', '**/plugins.sbt') }}
+        key: benchmark-coursier-${{ inputs.jdk }}-${{ hashFiles('build.sbt', 'project/*.scala', 'versions.properties', '**/plugins.sbt') }}
         restore-keys: |
           benchmark-coursier-${{ inputs.jdk }}
     - name: Install Java ${{ inputs.jdk }}
@@ -187,7 +187,7 @@ jobs:
         key: tpcds-${{ hashFiles('.github/workflows/benchmark.yml', 'sql/core/src/test/scala/org/apache/spark/sql/TPCDSSchema.scala') }}
     - name: Run benchmarks
       run: |
-        ./build/sbt -Pscala-${{ inputs.scala }} -Pyarn -Pkubernetes -Phive -Phive-thriftserver -Phadoop-cloud -Pkinesis-asl -Pspark-ganglia-lgpl Test/package
+        ./build/sbt Test/package
         # Make less noisy
         cp conf/log4j2.properties.template conf/log4j2.properties
         sed -i 's/rootLogger.level = info/rootLogger.level = warn/g' conf/log4j2.properties

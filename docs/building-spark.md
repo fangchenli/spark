@@ -153,10 +153,17 @@ Maven is the official build tool recommended for packaging Spark, and is the *bu
 But SBT is supported for day-to-day development since it can provide much faster iterative
 compilation. More advanced developers may wish to use SBT.
 
-The SBT build is derived from the Maven POM files, and so the same Maven profiles and variables
-can be set to control the SBT build. For example:
+Spark uses a native SBT build defined in `build.sbt` and `project/*.scala`. Unlike Maven,
+SBT does not require profile flags to enable modules - all modules are always available.
+For example:
 
     ./build/sbt package
+
+To work with a specific module:
+
+    ./build/sbt core/package              # build
+    ./build/sbt core/test                  # run tests
+    ./build/sbt "core/testOnly *ShuffleSuite"  # run a specific test
 
 To avoid the overhead of launching sbt each time you need to re-compile, you can launch sbt
 in interactive mode by running `build/sbt`, and then run all build commands at the command
@@ -236,10 +243,10 @@ If you are building PySpark and wish to run the PySpark tests you will need to b
     ./build/mvn -DskipTests clean package -Phive
     ./python/run-tests
 
-If you are building PySpark with SBT and wish to run the PySpark tests, you will need to build Spark with Hive support and also build the test components:
+If you are building PySpark with SBT and wish to run the PySpark tests, you will need to build Spark and also build the test components:
 
-    ./build/sbt -Phive clean package
-    ./build/sbt test:compile
+    ./build/sbt clean package
+    ./build/sbt Test/compile
     ./python/run-tests
 
 The run-tests script also can be limited to a specific Python version or a specific module
@@ -268,7 +275,7 @@ On Linux, this can be done by `sudo service docker start`.
 
 or
 
-    ./build/sbt -Pdocker-integration-tests docker-integration-tests/test
+    ./build/sbt dockerIntegrationTests/test
 
 <!---
 ## Change Scala Version
@@ -316,7 +323,7 @@ or
 
 ```bash
 export SPARK_PROTOC_EXEC_PATH=/path-to-protoc-exe
-./build/sbt -Puser-defined-protoc clean package
+./build/sbt clean package
 ```
 
 The user-defined `protoc` binary files can be produced in the user's compilation environment by source code compilation, for compilation steps, please refer to [protobuf](https://github.com/protocolbuffers/protobuf).
