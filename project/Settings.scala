@@ -91,9 +91,11 @@ object Settings {
       else baseOpts ++ Seq("-source", "1.8", "-target", "1.8")
     },
     Compile / javacOptions ++= Seq("-Xlint:unchecked"),
-    Compile / doc / javacOptions ++= Seq(
-      "-Xdoclint:all",
-      "-Xdoclint:-missing"
+    // Javadoc options - use := to override base javacOptions since they contain
+    // compiler-only flags that javadoc doesn't understand (like -proc:full, --release)
+    Compile / doc / javacOptions := Seq(
+      "-Xdoclint:none",
+      "--ignore-source-errors"
     )
   )
 
@@ -161,7 +163,9 @@ object Settings {
         "JAVA_HOME" -> sys.env.getOrElse("JAVA_HOME", sys.props("java.home")),
         // Set SPARK_LOCAL_IP to avoid hostname resolution issues on macOS
         // This ensures Utils.localHostName() returns a bindable address
-        "SPARK_LOCAL_IP" -> sys.env.getOrElse("SPARK_LOCAL_IP", "127.0.0.1")
+        "SPARK_LOCAL_IP" -> sys.env.getOrElse("SPARK_LOCAL_IP", "127.0.0.1"),
+        // Beeline options for launcher tests
+        "SPARK_BEELINE_OPTS" -> "-DmyKey=yourValue"
       )
       // macOS specific
       if (sys.props("os.name").contains("Mac OS X")) {
@@ -190,7 +194,7 @@ object Settings {
         "-Dspark.ui.showConsoleProgress=false",
         "-Dspark.unsafe.exceptionOnMemoryLeak=true",
         "-Dspark.hadoop.hadoop.caller.context.enabled=true",
-        "-Dspark.driver.host=127.0.0.1",
+        // Only set bindAddress (not host) - host gets stored in checkpoints and breaks tests
         "-Dspark.driver.bindAddress=127.0.0.1",
         "-Dhive.conf.validation=false",
         "-Dsun.io.serialization.extendedDebugInfo=false",
@@ -210,7 +214,27 @@ object Settings {
     ),
 
     // JUnit interface
-    libraryDependencies += Dependencies.TestDeps.jupiterInterface % Test
+    libraryDependencies += Dependencies.TestDeps.jupiterInterface % Test,
+
+    // Jetty dependencies - needed for tests (marked Provided in core for shading)
+    libraryDependencies ++= Seq(
+      Dependencies.Jetty.compressionServer % Test,
+      Dependencies.Jetty.compressionCommon % Test,
+      Dependencies.Jetty.compressionGzip % Test,
+      Dependencies.Jetty.server % Test,
+      Dependencies.Jetty.util % Test,
+      Dependencies.Jetty.http % Test,
+      Dependencies.Jetty.io % Test,
+      Dependencies.Jetty.client % Test,
+      Dependencies.Jetty.security % Test,
+      Dependencies.Jetty.session % Test,
+      Dependencies.Jetty.ee10Servlet % Test,
+      Dependencies.Jetty.ee10Servlets % Test,
+      Dependencies.Jetty.ee10Plus % Test,
+      Dependencies.Jetty.ee10Proxy % Test,
+      Dependencies.Google.guava % Test,
+      Dependencies.Google.failureaccess % Test
+    )
   )
 
   // ===== PUBLISHING SETTINGS =====

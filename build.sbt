@@ -61,6 +61,7 @@ lazy val spark = (project in file("."))
     // Tier 15: Integration Tests
     dockerIntegrationTests, kubernetesIntegrationTests
   )
+  .enablePlugins(sbtunidoc.ScalaUnidocPlugin, sbtunidoc.JavaUnidocPlugin)
   .settings(
     name := "spark-parent",
     publish / skip := true,
@@ -68,6 +69,19 @@ lazy val spark = (project in file("."))
     Compile / sources := Seq.empty,
     Test / sources := Seq.empty
   )
+  .settings(Unidoc.settings(Seq(
+    // Exclude projects from unified documentation
+    repl, examples, tools, kubernetes, yarn, tags,
+    kafkaStreaming, kafkaSql, kafkaTokenProvider,
+    connectCommon, connect, connectClientJdbc, connectClientJvm, connectShims,
+    protobuf, profiler,
+    // Internal/infrastructure modules
+    hive, hiveThriftserver, networkCommon, networkShuffle, networkYarn,
+    unsafe, kinesisAsl, gangliaLgpl, pipelines,
+    // Assembly and test modules
+    assembly, kafkaAssembly, kinesisAslAssembly,
+    dockerIntegrationTests, kubernetesIntegrationTests
+  )))
 
 // =============================================================================
 // TIER 1: NO SPARK DEPENDENCIES
@@ -174,7 +188,10 @@ lazy val unsafe = (project in file("common/unsafe"))
       Kryo.chill,
       Kryo.chillJava,
       Kryo.objenesis,
-      Logging.slf4jApi % Provided
+      Logging.slf4jApi % Provided,
+      // Test dependencies
+      Commons.text % sbt.Test,
+      TestDeps.scalacheck % sbt.Test
     ) ++ TestDeps.common
   )
 
