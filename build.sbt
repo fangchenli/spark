@@ -1465,10 +1465,10 @@ lazy val kinesisAslAssembly = (project in file("connector/kinesis-asl-assembly")
 // Docker-based integration tests
 lazy val dockerIntegrationTests = (project in file("connector/docker-integration-tests"))
   .dependsOn(
+    sql % "test->compile;test->test",
     tags % "test->test",
     core % "test->test",
-    catalyst % "test->test",
-    sql % "test->test"
+    catalyst % "test->test"
   )
   .settings(sparkModuleSettings)
   .settings(
@@ -1476,8 +1476,14 @@ lazy val dockerIntegrationTests = (project in file("connector/docker-integration
     publish / skip := true,
     // Test-only module
     Compile / sources := Seq.empty,
+    // Exclude connectShims to prevent stub classes from shadowing real implementations
+    Test / dependencyClasspathAsJars := (Test / dependencyClasspathAsJars).value.filterNot { f =>
+      f.data.getName.contains("spark-connect-shims")
+    },
     libraryDependencies ++= Seq(
-      Google.guava % sbt.Test
+      Google.guava % sbt.Test,
+      Docker.java % sbt.Test,
+      Docker.transportZerodep % sbt.Test
     ) ++ TestDeps.common
   )
 
@@ -1494,6 +1500,7 @@ lazy val kubernetesIntegrationTests = (project in file("resource-managers/kubern
     name := "spark-kubernetes-integration-tests",
     publish / skip := true,
     libraryDependencies ++= Seq(
-      Kubernetes.client
+      Kubernetes.client,
+      Cloud.awsSdkBundle % sbt.Test
     ) ++ TestDeps.common
   )

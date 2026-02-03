@@ -179,6 +179,9 @@ object Versions {
   val htmlunitDriver: String = get("htmlunit.driver.version")
   val jmock: String = get("jmock.version")
 
+  // ===== INTEGRATION TEST DEPENDENCIES =====
+  val dockerJava: String = get("docker.java.version")
+
   // ===== DATABASE DRIVERS (TEST) =====
   val mariadbClient: String = get("mariadb.java.client.version")
   val mysqlConnector: String = get("mysql.connector.version")

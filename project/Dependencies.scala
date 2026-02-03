@@ -218,6 +218,16 @@ object Dependencies {
     val sdkCore = "software.amazon.awssdk" % "sdk-core" % Versions.awsJavaSdkV2
   }
 
+  // ===== DOCKER (TEST) =====
+  object Docker {
+    private val exclusions = Seq(
+      ExclusionRule(organization = "com.github.docker-java", name = "docker-java-transport-netty"),
+      ExclusionRule(organization = "com.github.docker-java", name = "docker-java-transport-jersey")
+    )
+    val java = ("com.github.docker-java" % "docker-java" % Versions.dockerJava).excludeAll(exclusions: _*)
+    val transportZerodep = "com.github.docker-java" % "docker-java-transport-zerodep" % Versions.dockerJava
+  }
+
   // ===== GANGLIA =====
   object Ganglia {
     val gmetric4j = "info.ganglia.gmetric4j" % "gmetric4j" % "1.0.10"
