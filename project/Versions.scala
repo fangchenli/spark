@@ -162,6 +162,11 @@ object Versions {
   val gcsConnector: String = get("gcs.connector.version")
   val analyticsAcceleratorS3: String = get("analytics.accelerator.s3.version")
 
+  // ===== CLOUD DEPENDENCIES =====
+  val wildflyOpenssl: String = get("wildfly.openssl.version")
+  val okhttp: String = get("okhttp.version")
+  val okio: String = get("okio.version")
+
   // ===== KUBERNETES =====
   val kubernetesClient: String = get("kubernetes.client.version")
 

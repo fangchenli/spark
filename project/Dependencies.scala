@@ -194,9 +194,9 @@ object Dependencies {
       ExclusionRule(organization = "*")
     )
     // Misc
-    val wildflyOpenssl = "org.wildfly.openssl" % "wildfly-openssl" % "2.2.5.Final"
-    val okhttp = "com.squareup.okhttp3" % "okhttp" % "3.12.12"
-    val okio = "com.squareup.okio" % "okio" % "1.17.6"
+    val wildflyOpenssl = "org.wildfly.openssl" % "wildfly-openssl" % Versions.wildflyOpenssl
+    val okhttp = "com.squareup.okhttp3" % "okhttp" % Versions.okhttp
+    val okio = "com.squareup.okio" % "okio" % Versions.okio
   }
 
   // ===== AWS KINESIS =====

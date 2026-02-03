@@ -99,6 +99,8 @@ object Unidoc {
     Seq(
       publish := {},
 
+      // Exclude from lint - this setting is used internally by genjavadoc plugin
+      Global / excludeLintKeys += unidocGenjavadocVersion,
       unidocGenjavadocVersion := "0.19",
 
       (ScalaUnidoc / unidoc / unidocAllClasspaths) := {
