@@ -37,10 +37,28 @@ object Settings {
   )
 
   // ===== SCALA COMPILER SETTINGS =====
-  // Note: -release flag requires JDK 17+ to be running sbt
+  // Supports both Scala 2.13 and Scala 3 with version-conditional flags
+  // Use scalaBinaryVersion.value to allow command-line control via:
+  //   sbt ++3.3.4 compile
+  //   sbt -Dscala.version=3.3.4 compile
   lazy val scalaCompilerSettings: Seq[Setting[_]] = Seq(
     scalacOptions ++= {
-      val baseOpts = Seq(
+      val isScala3 = scalaBinaryVersion.value.startsWith("3")
+
+      // Scala 3 compiler options
+      val scala3Opts = Seq(
+        "-unchecked",
+        "-deprecation",
+        "-feature",
+        "-Wunused:imports",
+        "-Wconf:any:e",
+        "-Wconf:cat=deprecation:wv",
+        // Source compatibility mode (allows some Scala 2 syntax)
+        "-source:3.3-migration"
+      )
+
+      // Scala 2.13 compiler options
+      val scala2Opts = Seq(
         "-unchecked",
         "-deprecation",
         "-feature",
@@ -65,31 +83,49 @@ object Settings {
         // Symbol literal deprecation
         "-Wconf:cat=deprecation&msg=symbol literal is deprecated:e"
       )
-      // Add -release flag only if running on JDK 9+
-      val javaVersionStr = sys.props("java.specification.version")
-      val javaVersion = if (javaVersionStr.startsWith("1.")) javaVersionStr.drop(2).toInt else javaVersionStr.toInt
-      if (javaVersion >= 9) baseOpts ++ Seq("-release", Versions.java)
-      else baseOpts ++ Seq("-target:jvm-1.8")
+
+      val baseOpts = if (isScala3) scala3Opts else scala2Opts
+
+      // Spark requires Java 17+, so -release flag is always available
+      baseOpts ++ Seq("-release", Versions.java)
     },
-    // Source path for scaladoc
-    Compile / scalacOptions ++= Seq(
-      s"-sourcepath:${baseDirectory.value.getAbsolutePath}"
-    )
+    // Source path for scaladoc (Scala 2 only, Scala 3 uses different option)
+    Compile / scalacOptions ++= {
+      if (scalaBinaryVersion.value.startsWith("3")) Seq.empty
+      else Seq(s"-sourcepath:${baseDirectory.value.getAbsolutePath}")
+    },
+    // Version-specific source directories (e.g., src/main/scala-2.13, src/main/scala-3)
+    Compile / unmanagedSourceDirectories ++= {
+      val sourceDir = (Compile / sourceDirectory).value
+      val sbv = scalaBinaryVersion.value
+      val versionSpecificDir = if (sbv.startsWith("3")) {
+        sourceDir / "scala-3"
+      } else {
+        sourceDir / s"scala-$sbv"
+      }
+      if (versionSpecificDir.exists()) Seq(versionSpecificDir) else Seq.empty
+    },
+    Test / unmanagedSourceDirectories ++= {
+      val sourceDir = (Test / sourceDirectory).value
+      val sbv = scalaBinaryVersion.value
+      val versionSpecificDir = if (sbv.startsWith("3")) {
+        sourceDir / "scala-3"
+      } else {
+        sourceDir / s"scala-$sbv"
+      }
+      if (versionSpecificDir.exists()) Seq(versionSpecificDir) else Seq.empty
+    }
   )
 
   // ===== JAVA COMPILER SETTINGS =====
-  // Note: --release flag requires JDK 9+ to be running sbt
+  // Spark requires Java 17+, so --release flag is always available
   lazy val javaCompilerSettings: Seq[Setting[_]] = Seq(
-    javacOptions ++= {
-      val baseOpts = Seq(
-        "-encoding", "UTF-8",
-        "-g"
-      )
-      val javaVersionStr = sys.props("java.specification.version")
-      val javaVersion = if (javaVersionStr.startsWith("1.")) javaVersionStr.drop(2).toInt else javaVersionStr.toInt
-      if (javaVersion >= 9) baseOpts ++ Seq("-proc:full", s"--release=${Versions.java}")
-      else baseOpts ++ Seq("-source", "1.8", "-target", "1.8")
-    },
+    javacOptions ++= Seq(
+      "-encoding", "UTF-8",
+      "-g",
+      "-proc:full",
+      s"--release=${Versions.java}"
+    ),
     Compile / javacOptions ++= Seq("-Xlint:unchecked"),
     // Javadoc options - use := to override base javacOptions since they contain
     // compiler-only flags that javadoc doesn't understand (like -proc:full, --release)
@@ -158,7 +194,7 @@ object Settings {
         "SPARK_DIST_CLASSPATH" -> (Test / fullClasspath).value.files.map(_.getAbsolutePath)
           .mkString(java.io.File.pathSeparator),
         "SPARK_PREPEND_CLASSES" -> "1",
-        "SPARK_SCALA_VERSION" -> Versions.scalaBinary,
+        "SPARK_SCALA_VERSION" -> scalaBinaryVersion.value,
         "SPARK_TESTING" -> "1",
         "JAVA_HOME" -> sys.env.getOrElse("JAVA_HOME", sys.props("java.home")),
         // Set SPARK_LOCAL_IP to avoid hostname resolution issues on macOS
@@ -271,7 +307,9 @@ object Settings {
     Seq(
       organization := "org.apache.spark",
       version := Versions.spark,
-      scalaVersion := Versions.scala,
+      // Allow Scala version override via system property: -Dscala.version=3.3.4
+      // Falls back to versions.properties if not specified
+      scalaVersion := sys.props.getOrElse("scala.version", Versions.scala),
 
       // Export jars for compile, not for test
       Compile / exportJars := true,
