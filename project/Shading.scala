@@ -19,16 +19,80 @@ import sbt._
 import sbt.Keys._
 import sbtassembly.AssemblyPlugin.autoImport._
 import java.util.Locale
+import java.util.jar.JarFile
+import scala.collection.JavaConverters._
 
 /**
  * Shading configuration for native SBT build.
- * Note: Full shading configuration uses sbt-assembly's ShadeRule which needs
- * to be configured in build.sbt where the assembly plugin is properly loaded.
+ *
+ * This module configures sbt-assembly's ShadeRule for bytecode relocation.
+ * Key design decisions:
+ *
+ * 1. We use `.inAll` for shade rules (not `.inLibrary()`) because:
+ *    - Shaded libraries often reference each other (e.g., Jetty uses Guava)
+ *    - All references must be consistently relocated across ALL included jars
+ *    - Using `.inLibrary(guava)` would miss Guava references in Jetty code
+ *
+ * 2. We use ModuleID matching (not jar name matching) for jar inclusion because:
+ *    - ModuleID matching is more robust than string-based jar name patterns
+ *    - It handles version differences and classifier variations correctly
+ *    - It's the recommended sbt approach for dependency filtering
+ *
+ * 3. Assembly inclusion is controlled by `assemblyExcludedJars` setting which
+ *    filters the classpath to include only the specific dependencies we want.
  */
 object Shading {
 
   // Package name for relocated/shaded classes
   val sparkShadePackage = "org.sparkproject"
+
+  // ===== MODULE DEFINITIONS =====
+  // Define library coordinates for precise dependency matching.
+  // These are used by assemblyExcludedJars to filter which jars are included.
+
+  /** Jetty EE10 modules (Jetty 12.x) to include in core assembly */
+  private val jettyEe10Modules: Set[(String, String)] = Set(
+    ("org.eclipse.jetty.ee10", "jetty-ee10-proxy"),
+    ("org.eclipse.jetty.ee10", "jetty-ee10-servlet"),
+    ("org.eclipse.jetty.ee10", "jetty-ee10-servlets"),
+    ("org.eclipse.jetty.ee10", "jetty-ee10-plus")
+  )
+
+  /** Jetty compression modules (Jetty 12.x) */
+  private val jettyCompressionModules: Set[(String, String)] = Set(
+    ("org.eclipse.jetty.compression", "jetty-compression-server"),
+    ("org.eclipse.jetty.compression", "jetty-compression-common"),
+    ("org.eclipse.jetty.compression", "jetty-compression-gzip")
+  )
+
+  /** Jetty core modules - need version check to exclude old 9.x from avro-ipc-jetty */
+  private val jettyCoreModules: Set[(String, String)] = Set(
+    ("org.eclipse.jetty", "jetty-io"),
+    ("org.eclipse.jetty", "jetty-http"),
+    ("org.eclipse.jetty", "jetty-client"),
+    ("org.eclipse.jetty", "jetty-util"),
+    ("org.eclipse.jetty", "jetty-server"),
+    ("org.eclipse.jetty", "jetty-security"),
+    ("org.eclipse.jetty", "jetty-session")
+  )
+
+  /** Guava modules */
+  private val guavaModules: Set[(String, String)] = Set(
+    ("com.google.guava", "guava"),
+    ("com.google.guava", "failureaccess")
+  )
+
+  /** Protobuf modules */
+  private val protobufModules: Set[(String, String)] = Set(
+    ("com.google.protobuf", "protobuf-java")
+  )
+
+  /** All modules to include in core assembly */
+  private val coreIncludedModules: Set[(String, String)] =
+    jettyEe10Modules ++ jettyCompressionModules ++ jettyCoreModules ++ guavaModules ++ protobufModules
+
+  // Jetty major version prefix from versions.properties (e.g., "12." for version "12.1.5")
+  private val jettyMajorVersionPrefix = Versions.jetty.split("\\.")(0) + "."
 
   // Base merge strategy for assembly
   lazy val baseMergeStrategy: String => sbtassembly.MergeStrategy = {
@@ -49,54 +113,57 @@ object Shading {
   // Merge strategy for core assembly (backward compatibility)
   lazy val coreMergeStrategy: String => sbtassembly.MergeStrategy = baseMergeStrategy
 
-  // Artifacts to include in core assembly (matches Maven's shade plugin artifactSet.includes)
-  // See core/pom.xml for the canonical list
-  // Note: We specify exact artifact names without version-based patterns for Jetty
-  // because avro-ipc-jetty pulls in old Jetty 9.x which we need to exclude
-  private val coreIncludedArtifacts = Set(
-    // org.eclipse.jetty.ee10:* - Jetty EE10 modules (Jetty 12.x)
-    "jetty-ee10-proxy", "jetty-ee10-servlet", "jetty-ee10-servlets", "jetty-ee10-plus",
-    // org.eclipse.jetty.compression:* - Jetty compression (Jetty 12.x)
-    "jetty-compression-server", "jetty-compression-common", "jetty-compression-gzip",
-    // com.google.protobuf:* - Protocol Buffers
-    "protobuf-java"
-  )
-
-  // Jetty major version prefix from versions.properties (e.g., "12." for version "12.1.5")
-  private val jettyMajorVersionPrefix = Versions.jetty.split("\\.")(0) + "."
-
-  // Jetty core modules - these need version check to exclude old Jetty 9.x from avro-ipc-jetty
-  private val jettyCoreArtifacts = Set(
-    "jetty-io", "jetty-http", "jetty-client", "jetty-util", "jetty-server",
-    "jetty-security", "jetty-session"
-  )
-
-  // Match jar names for core assembly inclusion
-  // Includes: specific dependency artifacts, plus only spark-core jar
-  private def isCoreIncludedJar(jarName: String): Boolean = {
-    // Include only spark-core jar (not other Spark modules like network-common, unsafe, etc.)
-    // Pattern: spark-core_2.13-VERSION.jar or spark-core_2.12-VERSION.jar
-    if (jarName.startsWith("spark-core_")) {
-      return true
+  /**
+   * Check if a jar should be included in core assembly using ModuleID matching.
+   * This is more robust than string-based jar name matching.
+   *
+   * @param jar The attributed jar from the classpath
+   * @return true if the jar should be included in the assembly
+   */
+  private def isCoreIncludedJar(jar: Attributed[File]): Boolean = {
+    // Include spark-core jar itself
+    jar.get(moduleID.key) match {
+      case Some(mod) if mod.organization == "org.apache.spark" && mod.name.startsWith("spark-core") =>
+        return true
+      case _ => // continue checking
     }
 
-    // Check Jetty core modules - must match configured version, not old 9.x from avro-ipc-jetty
-    for (artifact <- jettyCoreArtifacts) {
+    // Check against our defined module sets using ModuleID
+    jar.get(moduleID.key).exists { mod =>
+      val orgName = (mod.organization, mod.name)
+
+      // For Jetty core modules, check version to exclude old 9.x from avro-ipc-jetty
+      if (jettyCoreModules.contains(orgName)) {
+        mod.revision.startsWith(jettyMajorVersionPrefix)
+      } else {
+        // For other modules, just check org/name match
+        coreIncludedModules.contains(orgName)
+      }
+    }
+  }
+
+  /**
+   * Fallback jar name matching for jars without ModuleID metadata.
+   * This handles edge cases where sbt doesn't attach module information.
+   */
+  private def isCoreIncludedJarByName(jarName: String): Boolean = {
+    // Include spark-core jar
+    if (jarName.startsWith("spark-core_")) return true
+
+    // Check Jetty core modules with version filtering
+    val jettyCoreNames = jettyCoreModules.map(_._2)
+    for (artifact <- jettyCoreNames) {
       if (jarName.startsWith(artifact + "-")) {
-        val versionPart = jarName.substring(artifact.length + 1) // skip artifact name and hyphen
-        if (versionPart.startsWith(jettyMajorVersionPrefix)) {
-          return true
-        }
-        // If it's a different major version, don't include
-        return false
+        val versionPart = jarName.substring(artifact.length + 1)
+        return versionPart.startsWith(jettyMajorVersionPrefix)
       }
     }
 
-    // Include specific dependency artifacts (non-Jetty or Jetty 12.x only modules)
-    coreIncludedArtifacts.exists { artifact =>
+    // Check other included modules
+    val allNames = coreIncludedModules.map(_._2)
+    allNames.exists { artifact =>
       if (jarName.startsWith(artifact)) {
         val suffix = jarName.substring(artifact.length)
-        // After artifact name, expect: -VERSION (starts with digit)
         suffix.startsWith("-") && suffix.length > 1 && suffix.charAt(1).isDigit
       } else false
     }
@@ -106,11 +173,17 @@ object Shading {
     assembly / assemblyMergeStrategy := coreMergeStrategy,
     assembly / assemblyOption := (assembly / assemblyOption).value.withIncludeScala(false),
     // Only include Jetty, Guava, and Protobuf (matching Maven's artifactSet.includes)
+    // Uses ModuleID matching for robustness, with jar name fallback
     assembly / assemblyExcludedJars := {
       val cp = (assembly / fullClasspath).value
-      cp.filterNot(jar => isCoreIncludedJar(jar.data.getName))
+      cp.filterNot { jar =>
+        // Try ModuleID matching first, fall back to jar name matching
+        isCoreIncludedJar(jar) || isCoreIncludedJarByName(jar.data.getName)
+      }
     },
     // Shade rules matching Maven's relocations
+    // Note: We use .inAll because shaded libraries reference each other
+    // (e.g., Jetty uses Guava), so ALL references must be relocated consistently
     assembly / assemblyShadeRules := Seq(
       ShadeRule.rename("org.eclipse.jetty.**" -> s"$sparkShadePackage.jetty.@1").inAll,
       ShadeRule.rename("com.google.common.**" -> s"$sparkShadePackage.guava.@1").inAll,
@@ -124,51 +197,89 @@ object Shading {
     assembly / assemblyOption := (assembly / assemblyOption).value.withIncludeScala(false)
   )
 
-  // Exact artifact names to include in connect-client assembly (matches Maven's artifactSet.includes)
+  // ===== CONNECT CLIENT MODULE DEFINITIONS =====
   // See sql/connect/client/jvm/pom.xml for the canonical list
-  // Jar names follow pattern: {artifactId}-{version}.jar or {artifactId}_{scalaVersion}-{version}.jar
-  private val connectClientIncludedArtifacts = Set(
+
+  /** Connect client included modules by (organization, artifactName) */
+  private val connectClientIncludedModules: Set[(String, String)] = Set(
     // com.google.guava:* - Guava and related
-    "guava", "failureaccess", "listenablefuture",
+    ("com.google.guava", "guava"),
+    ("com.google.guava", "failureaccess"),
+    ("com.google.guava", "listenablefuture"),
     // com.google.android:* - Android annotations
-    "annotations",
+    ("com.google.android", "annotations"),
     // com.google.api.grpc:* - gRPC protos
-    "proto-google-common-protos",
+    ("com.google.api.grpc", "proto-google-common-protos"),
     // com.google.code.gson:* - JSON
-    "gson",
+    ("com.google.code.gson", "gson"),
     // com.google.protobuf:* - Protocol Buffers
-    "protobuf-java",
+    ("com.google.protobuf", "protobuf-java"),
     // com.google.flatbuffers:* - FlatBuffers (used by Arrow)
-    "flatbuffers-java",
+    ("com.google.flatbuffers", "flatbuffers-java"),
     // io.grpc:* - gRPC (only core modules)
-    "grpc-api", "grpc-context", "grpc-core", "grpc-netty",
-    "grpc-protobuf", "grpc-protobuf-lite", "grpc-stub", "grpc-util",
-    "grpc-services", "grpc-inprocess",
+    ("io.grpc", "grpc-api"),
+    ("io.grpc", "grpc-context"),
+    ("io.grpc", "grpc-core"),
+    ("io.grpc", "grpc-netty"),
+    ("io.grpc", "grpc-protobuf"),
+    ("io.grpc", "grpc-protobuf-lite"),
+    ("io.grpc", "grpc-stub"),
+    ("io.grpc", "grpc-util"),
+    ("io.grpc", "grpc-services"),
+    ("io.grpc", "grpc-inprocess"),
     // io.netty:* - Netty (exact 12 modules matching Maven's shaded jar)
-    "netty-buffer", "netty-codec-base", "netty-codec-compression",
-    "netty-codec-http", "netty-codec-http2", "netty-codec-socks",
-    "netty-common", "netty-handler", "netty-handler-proxy",
-    "netty-resolver", "netty-transport", "netty-transport-native-unix-common",
+    ("io.netty", "netty-buffer"),
+    ("io.netty", "netty-codec"),
+    ("io.netty", "netty-codec-http"),
+    ("io.netty", "netty-codec-http2"),
+    ("io.netty", "netty-codec-socks"),
+    ("io.netty", "netty-common"),
+    ("io.netty", "netty-handler"),
+    ("io.netty", "netty-handler-proxy"),
+    ("io.netty", "netty-resolver"),
+    ("io.netty", "netty-transport"),
+    ("io.netty", "netty-transport-native-unix-common"),
     // io.perfmark:* - Performance tracing
-    "perfmark-api",
+    ("io.perfmark", "perfmark-api"),
     // org.apache.arrow:* - Arrow
-    "arrow-format", "arrow-memory-core", "arrow-memory-netty", "arrow-vector",
+    ("org.apache.arrow", "arrow-format"),
+    ("org.apache.arrow", "arrow-memory-core"),
+    ("org.apache.arrow", "arrow-memory-netty"),
+    ("org.apache.arrow", "arrow-vector"),
     // org.codehaus.mojo:* - Animal sniffer annotations
-    "animal-sniffer-annotations",
-    // org.apache.spark:* - Spark modules included in assembly (matches Maven's artifactSet)
-    // Note: spark-connect-shims is intentionally excluded (same as Maven)
-    "spark-connect-client-jvm", "spark-connect-common", "spark-sql-api"
+    ("org.codehaus.mojo", "animal-sniffer-annotations"),
+    // org.apache.spark:* - Spark modules (spark-connect-shims intentionally excluded)
+    ("org.apache.spark", "spark-connect-client-jvm"),
+    ("org.apache.spark", "spark-connect-common"),
+    ("org.apache.spark", "spark-sql-api")
   )
 
-  // Match jar names like "netty-transport-4.2.9.Final.jar" but not "netty-transport-classes-epoll-4.2.9.Final.jar"
-  // Pattern: artifactId followed by "-" + digit (version) or "_" + digit (scala version)
-  private def isConnectClientIncludedJar(jarName: String): Boolean = {
-    connectClientIncludedArtifacts.exists { artifact =>
+  /** Artifact names for fallback jar name matching */
+  private val connectClientIncludedArtifactNames: Set[String] =
+    connectClientIncludedModules.map(_._2)
+
+  /**
+   * Check if a jar should be included in connect-client assembly using ModuleID matching.
+   */
+  private def isConnectClientIncludedJar(jar: Attributed[File]): Boolean = {
+    jar.get(moduleID.key).exists { mod =>
+      // Handle Scala cross-versioned artifacts (name might have _2.13 suffix)
+      val baseName = mod.name.split("_").head
+      connectClientIncludedModules.contains((mod.organization, mod.name)) ||
+        connectClientIncludedModules.contains((mod.organization, baseName))
+    }
+  }
+
+  /**
+   * Fallback jar name matching for connect-client assembly.
+   * Pattern: artifactId followed by "-" + digit (version) or "_" + digit (scala version)
+   */
+  private def isConnectClientIncludedJarByName(jarName: String): Boolean = {
+    connectClientIncludedArtifactNames.exists { artifact =>
       if (jarName.startsWith(artifact)) {
         val suffix = jarName.substring(artifact.length)
-        // After artifact name, expect: -VERSION or _SCALA-VERSION
-        suffix.startsWith("-") && suffix.length > 1 && suffix.charAt(1).isDigit ||
-        suffix.startsWith("_") && suffix.length > 1 && suffix.charAt(1).isDigit
+        (suffix.startsWith("-") && suffix.length > 1 && suffix.charAt(1).isDigit) ||
+          (suffix.startsWith("_") && suffix.length > 1 && suffix.charAt(1).isDigit)
       } else false
     }
   }
@@ -187,11 +298,16 @@ object Shading {
     assembly / assemblyMergeStrategy := connectClientMergeStrategy,
     assembly / assemblyOption := (assembly / assemblyOption).value.withIncludeScala(false),
     // Match Maven's artifactSet.includes - only include specific dependencies
+    // Uses ModuleID matching for robustness, with jar name fallback
     assembly / assemblyExcludedJars := {
       val cp = (assembly / fullClasspath).value
-      cp.filterNot(jar => isConnectClientIncludedJar(jar.data.getName))
+      cp.filterNot { jar =>
+        isConnectClientIncludedJar(jar) || isConnectClientIncludedJarByName(jar.data.getName)
+      }
     },
     // Shade rules to match Maven's relocations (order matters - more specific rules first)
+    // Note: We use .inAll because shaded libraries reference each other
+    // (e.g., gRPC uses Netty, Arrow uses Netty), so ALL references must be relocated
     assembly / assemblyShadeRules := Seq(
       // Guava gets special treatment - shaded to connect.guava
       ShadeRule.rename("com.google.common.**" -> s"$sparkShadePackage.connect.guava.@1").inAll,
@@ -414,4 +530,109 @@ object Shading {
     )
     shimClasses.exists(c => path.startsWith(c))
   }
+
+  // ===== SHADING VERIFICATION =====
+
+  /** Task key for verifying shading was applied correctly */
+  val verifyShading = taskKey[Unit]("Verify shading relocations are correct in the assembly jar")
+
+  /**
+   * Patterns that should NOT exist in a correctly shaded assembly.
+   * If any of these are found, shading failed.
+   */
+  private val coreForbiddenPatterns = Seq(
+    "org/eclipse/jetty/",      // Should be relocated to org/sparkproject/jetty/
+    "com/google/common/",      // Should be relocated to org/sparkproject/guava/
+    "com/google/protobuf/"     // Should be relocated to org/sparkproject/spark_core/protobuf/
+  )
+
+  private val connectClientForbiddenPatterns = Seq(
+    "com/google/common/",      // Should be relocated to org/sparkproject/connect/guava/
+    "com/google/protobuf/",    // Should be relocated to org/sparkproject/com/google/protobuf/
+    "io/grpc/",                // Should be relocated to org/sparkproject/io/grpc/
+    "io/netty/",               // Should be relocated to org/sparkproject/io/netty/
+    "org/apache/arrow/"        // Should be relocated to org/sparkproject/org/apache/arrow/
+  )
+
+  /**
+   * Verify that an assembly jar has been correctly shaded.
+   * Checks that forbidden patterns don't exist as class paths.
+   *
+   * @param jarFile The assembly jar to verify
+   * @param forbiddenPatterns Patterns that should not exist
+   * @param log Logger for output
+   * @return List of violations found (empty if verification passed)
+   */
+  def verifyShadingInJar(
+      jarFile: File,
+      forbiddenPatterns: Seq[String],
+      log: sbt.util.Logger): Seq[String] = {
+    if (!jarFile.exists()) {
+      log.warn(s"Assembly jar not found: ${jarFile.getAbsolutePath}")
+      return Seq(s"Jar not found: $jarFile")
+    }
+
+    val jar = new JarFile(jarFile)
+    try {
+      val entries = jar.entries().asScala.toList
+      val classEntries = entries.filter(_.getName.endsWith(".class"))
+
+      val violations = forbiddenPatterns.flatMap { pattern =>
+        val matches = classEntries.filter(_.getName.startsWith(pattern))
+        if (matches.nonEmpty) {
+          log.error(s"Found ${matches.size} unshaded classes matching '$pattern'")
+          matches.take(5).foreach(e => log.error(s"  - ${e.getName}"))
+          if (matches.size > 5) log.error(s"  ... and ${matches.size - 5} more")
+          Some(s"Pattern '$pattern': ${matches.size} unshaded classes")
+        } else {
+          log.info(s"✓ No unshaded classes matching '$pattern'")
+          None
+        }
+      }
+
+      if (violations.isEmpty) {
+        log.success(s"Shading verification passed for ${jarFile.getName}")
+      } else {
+        log.error(s"Shading verification FAILED for ${jarFile.getName}")
+      }
+
+      violations
+    } finally {
+      jar.close()
+    }
+  }
+
+  /**
+   * Settings to add shading verification task to a project.
+   * Usage: Add `Shading.verifyShadingSettings(Shading.coreForbiddenPatterns)` to a project.
+   */
+  def verifyShadingSettings(forbiddenPatterns: Seq[String]): Seq[Setting[_]] = Seq(
+    verifyShading := {
+      val log = streams.value.log
+      val jarFile = (assembly / assemblyOutputPath).value
+      val violations = verifyShadingInJar(jarFile, forbiddenPatterns, log)
+      if (violations.nonEmpty) {
+        sys.error(s"Shading verification failed with ${violations.size} violations")
+      }
+    }
+  )
+
+  /** Verification settings for core assembly */
+  lazy val coreVerifyShadingSettings: Seq[Setting[_]] =
+    verifyShadingSettings(coreForbiddenPatterns)
+
+  /** Verification settings for connect-client assembly */
+  lazy val connectClientVerifyShadingSettings: Seq[Setting[_]] =
+    verifyShadingSettings(connectClientForbiddenPatterns)
+
+  // ===== DEBUG LOGGING =====
+
+  /**
+   * Settings to enable debug logging for assembly.
+   * Useful for troubleshooting shading issues.
+   * Usage: Add `Shading.debugAssemblySettings` to a project when debugging.
+   */
+  lazy val debugAssemblySettings: Seq[Setting[_]] = Seq(
+    assembly / logLevel := Level.Debug
+  )
 }
