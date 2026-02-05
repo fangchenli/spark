@@ -182,15 +182,6 @@ packages = [
 "pyspark.examples" = ["**/*.py"]
 "*" = ["*.pyi"]
 
-[tool.pytest.ini_options]
-# Pytest is used only to run mypy data tests
-python_files = "test_*.yml"
-testpaths = [
-    "python/pyspark/tests/typing",
-    "python/pyspark/sql/tests/typing",
-    "python/pyspark/ml/typing",
-]
-
 [tool.ruff]
 # Note: paths are relative to repo root since ruff is invoked from there
 exclude = [
