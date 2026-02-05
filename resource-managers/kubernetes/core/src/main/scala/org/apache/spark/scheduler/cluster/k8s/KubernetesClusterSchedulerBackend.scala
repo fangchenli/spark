@@ -25,6 +25,7 @@ import scala.concurrent.Future
 import io.fabric8.kubernetes.api.model.Pod
 import io.fabric8.kubernetes.api.model.PodBuilder
 import io.fabric8.kubernetes.client.KubernetesClient
+import io.fabric8.kubernetes.client.dsl.base.{PatchContext, PatchType}
 
 import org.apache.spark.SparkContext
 import org.apache.spark.deploy.k8s.{KubernetesConf, KubernetesUtils}
@@ -50,7 +51,7 @@ private[spark] class KubernetesClusterSchedulerBackend(
     executorService: ScheduledExecutorService,
     snapshotsStore: ExecutorPodsSnapshotsStore,
     podAllocator: AbstractPodsAllocator,
-    lifecycleEventHandler: ExecutorPodsLifecycleManager,
+    lifecycleManager: ExecutorPodsLifecycleManager,
     watchEvents: ExecutorPodsWatchSnapshotSource,
     pollEvents: ExecutorPodsPollingSnapshotSource)
     extends CoarseGrainedSchedulerBackend(scheduler, sc.env.rpcEnv) {
@@ -73,11 +74,13 @@ private[spark] class KubernetesClusterSchedulerBackend(
 
   private val namespace = conf.get(KUBERNETES_NAMESPACE)
 
+  private val PATCH_CONTEXT = PatchContext.of(PatchType.STRATEGIC_MERGE)
+
   // KEP 2255: When a Deployment or Replicaset is scaled down, the pods will be deleted in the
   // order of the value of this annotation, ascending.
   private val podDeletionCostAnnotation = "controller.kubernetes.io/pod-deletion-cost"
 
-  // Allow removeExecutor to be accessible by ExecutorPodsLifecycleEventHandler
+  // Allow removeExecutor to be accessible by ExecutorPodsLifecycleManager
   private[k8s] def doRemoveExecutor(executorId: String, reason: ExecutorLossReason): Unit = {
     removeExecutor(executorId, reason)
   }
@@ -113,7 +116,7 @@ private[spark] class KubernetesClusterSchedulerBackend(
     podAllocator.start(applicationId(), this)
     val initExecs = Map(defaultProfile -> initialExecutors)
     podAllocator.setTotalExpectedExecutors(initExecs)
-    lifecycleEventHandler.start(this)
+    lifecycleManager.start(this)
     watchEvents.start(applicationId())
     pollEvents.start(applicationId())
     if (!conf.get(KUBERNETES_EXECUTOR_DISABLE_CONFIGMAP)) {
@@ -212,11 +215,11 @@ private[spark] class KubernetesClusterSchedulerBackend(
             .withLabelIn(SPARK_EXECUTOR_ID_LABEL, execIds: _*)
             .resources()
             .forEach { podResource =>
-              podResource.edit({ p: Pod =>
-                new PodBuilder(p).editOrNewMetadata()
-                  .addToAnnotations(podDeletionCostAnnotation, cost.toString)
-                  .endMetadata()
-                  .build()})
+              podResource.patch(PATCH_CONTEXT, new PodBuilder()
+                .withNewMetadata()
+                .addToAnnotations(podDeletionCostAnnotation, cost.toString)
+                .endMetadata()
+                .build())
             }
         }
       }
