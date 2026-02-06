@@ -259,14 +259,33 @@ object Shading {
     connectClientIncludedModules.map(_._2)
 
   /**
+   * Scala binary version suffix for the current build (e.g., "_2.13").
+   * Used to strip cross-version suffixes from artifact names when comparing ModuleIDs.
+   */
+  private val scalaBinarySuffix: String = "_" + Versions.scalaBinary
+
+  /**
    * Check if a jar should be included in connect-client assembly using ModuleID matching.
+   *
+   * Note on cross-versioning: When dependencies are declared with %% (e.g., "org" %% "name" % "ver"),
+   * sbt's ModuleID.name typically contains the base name without Scala suffix. However, some edge
+   * cases may have the suffix in the name, so we check both the original name and strip the
+   * current Scala binary version suffix if present.
    */
   private def isConnectClientIncludedJar(jar: Attributed[File]): Boolean = {
     jar.get(moduleID.key).exists { mod =>
-      // Handle Scala cross-versioned artifacts (name might have _2.13 suffix)
-      val baseName = mod.name.split("_").head
-      connectClientIncludedModules.contains((mod.organization, mod.name)) ||
+      // First, try exact match (works for most %% dependencies where name is already base name)
+      if (connectClientIncludedModules.contains((mod.organization, mod.name))) {
+        true
+      } else {
+        // Handle edge case: strip Scala binary version suffix if present
+        val baseName = if (mod.name.endsWith(scalaBinarySuffix)) {
+          mod.name.dropRight(scalaBinarySuffix.length)
+        } else {
+          mod.name
+        }
         connectClientIncludedModules.contains((mod.organization, baseName))
+      }
     }
   }
 
@@ -327,61 +346,75 @@ object Shading {
     assembly / assemblyOption := (assembly / assemblyOption).value.withIncludeScala(false)
   )
 
-  // Kafka assembly excluded jar prefixes (matching Maven's provided scope + transitive deps)
-  // Similar to kinesis but with Kafka-specific inclusions
-  private val kafkaExcludedPrefixes = Set(
-    // Spark modules (all of them for Kafka - it's a small assembly)
-    "spark-core", "spark-streaming_", "spark-tags", "spark-unsafe", "spark-launcher",
-    "spark-network-common", "spark-network-shuffle", "spark-common-utils", "spark-localdb",
-    "spark-kvstore", "spark-variant",
-    // Scala library
-    "scala-library", "scala-reflect", "scala-compiler",
-    // Commons
-    "commons-codec", "commons-lang-2", "commons-io", "commons-text", "commons-collections",
-    "commons-math", "commons-net", "commons-pool", "commons-logging", "commons-crypto",
-    // Protobuf (provided in Kafka assembly pom)
-    "protobuf-java",
-    // LZ4 (provided)
-    "lz4-java",
-    // Hadoop
-    "hadoop-",
-    // Avro
-    "avro-",
-    // Curator and ZooKeeper
-    "curator-", "zookeeper-",
-    // Logging
-    "log4j-", "slf4j-",
-    // Snappy
-    "snappy-java",
-    // Jersey and JAX-RS
-    "jersey-", "hk2-", "aopalliance", "javassist", "osgi-resource-locator",
-    "jakarta.", "javax.",
-    // Web UI related
-    "jetty-",
-    // Large transitive deps from Spark core
-    "fastutil-", // it.unimi.dsi:fastutil
-    "netty-", // Netty
-    "guava-", "listenablefuture", "failureaccess", // Guava
-    "gson", // Google Gson
-    "jsr305", "checker-qual", "error_prone_annotations", "j2objc-annotations",
-    "jna", "jna-platform",
-    // Other Spark deps
-    "kryo", "minlog", "objenesis", // Kryo
-    "chill", "paranamer", // Twitter Chill
-    "json4s-", "jackson-module-scala", // JSON
-    "icu4j", "compress-lzf",
-    "RoaringBitmap", "shims",
-    "rocksdbjni", "leveldbjni", "leveldb",
-    "py4j", "jline", "janino", "commons-compiler",
-    "metrics-core", "metrics-jmx", "metrics-json", "metrics-jvm", "metrics-graphite",
-    "ivy-", "oro-", "velocity-", "xbean-",
-    "audience-annotations", "activation", "annotation-api", "jaxb", "stax",
-    "unused-1"
+  // ===== KAFKA ASSEMBLY EXCLUSIONS =====
+  // Organizations to completely exclude from Kafka assembly
+  private val kafkaExcludedOrganizations = Set(
+    "org.apache.spark",           // All Spark modules
+    "org.scala-lang",             // Scala library
+    "org.apache.hadoop",          // Hadoop
+    "org.apache.avro",            // Avro
+    "org.apache.curator",         // Curator
+    "org.apache.zookeeper",       // ZooKeeper
+    "org.apache.logging.log4j",   // Log4j
+    "org.slf4j",                  // SLF4J
+    "org.eclipse.jetty",          // Jetty (all variants)
+    "org.eclipse.jetty.ee10",
+    "org.eclipse.jetty.compression",
+    "io.netty",                   // Netty
+    "com.google.guava",           // Guava
+    "com.google.protobuf",        // Protobuf
+    "it.unimi.dsi",               // fastutil
+    "net.java.dev.jna",           // JNA
+    "com.esotericsoftware",       // Kryo
+    "com.twitter",                // Chill
+    "org.json4s",                 // JSON4s
+    "io.dropwizard.metrics",      // Metrics
+    "org.glassfish.jersey",       // Jersey
+    "org.glassfish.hk2"           // HK2
   )
 
-  // Check if a jar should be excluded from kafka assembly
-  private def isKafkaExcludedJar(jarName: String): Boolean = {
-    kafkaExcludedPrefixes.exists(prefix => jarName.startsWith(prefix))
+  // Artifact prefixes to exclude (for orgs not fully excluded)
+  private val kafkaExcludedArtifactPrefixes = Set(
+    "commons-codec", "commons-lang-2", "commons-io", "commons-text", "commons-collections",
+    "commons-math", "commons-net", "commons-pool", "commons-logging", "commons-crypto",
+    "lz4-java", "snappy-java", "aopalliance", "javassist", "osgi-resource-locator",
+    "jakarta.", "javax.", "gson", "jsr305", "checker-qual", "error_prone_annotations",
+    "j2objc-annotations", "minlog", "objenesis", "paranamer", "jackson-module-scala",
+    "icu4j", "compress-lzf", "RoaringBitmap", "shims", "rocksdbjni", "leveldbjni",
+    "leveldb", "py4j", "jline", "janino", "commons-compiler", "ivy-", "oro-",
+    "velocity-", "xbean-", "audience-annotations", "activation", "annotation-api",
+    "jaxb", "stax", "unused-1", "listenablefuture", "failureaccess"
+  )
+
+  /**
+   * Check if a jar should be excluded from Kafka assembly using ModuleID matching.
+   */
+  private def isKafkaExcludedJar(jar: Attributed[File]): Boolean = {
+    jar.get(moduleID.key) match {
+      case Some(mod) =>
+        // Check organization-level exclusion
+        kafkaExcludedOrganizations.contains(mod.organization) ||
+          // Check artifact prefix exclusion
+          kafkaExcludedArtifactPrefixes.exists(prefix => mod.name.startsWith(prefix))
+      case None =>
+        // Fallback to jar name matching
+        isKafkaExcludedJarByName(jar.data.getName)
+    }
+  }
+
+  /** Fallback jar name matching for Kafka assembly */
+  private def isKafkaExcludedJarByName(jarName: String): Boolean = {
+    kafkaExcludedArtifactPrefixes.exists(prefix => jarName.startsWith(prefix)) ||
+      jarName.startsWith("spark-") || jarName.startsWith("scala-") ||
+      jarName.startsWith("hadoop-") || jarName.startsWith("avro-") ||
+      jarName.startsWith("curator-") || jarName.startsWith("zookeeper-") ||
+      jarName.startsWith("log4j-") || jarName.startsWith("slf4j-") ||
+      jarName.startsWith("jetty-") || jarName.startsWith("netty-") ||
+      jarName.startsWith("guava-") || jarName.startsWith("protobuf-") ||
+      jarName.startsWith("fastutil-") || jarName.startsWith("jna-") ||
+      jarName.startsWith("kryo-") || jarName.startsWith("chill-") ||
+      jarName.startsWith("json4s-") || jarName.startsWith("metrics-") ||
+      jarName.startsWith("jersey-") || jarName.startsWith("hk2-")
   }
 
   // Kafka assembly settings - exclude jars matching provided scope
@@ -390,99 +423,118 @@ object Shading {
     assembly / assemblyOption := (assembly / assemblyOption).value.withIncludeScala(false),
     assembly / assemblyExcludedJars := {
       val cp = (assembly / fullClasspath).value
-      cp.filter(jar => isKafkaExcludedJar(jar.data.getName))
+      cp.filter(jar => isKafkaExcludedJar(jar))
     }
   )
 
-  // Kinesis assembly excluded jar prefixes (matching Maven's provided scope + transitive deps)
-  // These jars are already in the Spark assembly or are excluded from the connector assembly
-  private val kinesisExcludedPrefixes = Set(
-    // Spark modules (except kinesis-asl itself)
-    "spark-core", "spark-streaming_", "spark-tags", "spark-unsafe", "spark-launcher",
-    "spark-network-common", "spark-network-shuffle", "spark-common-utils", "spark-localdb",
-    "spark-kvstore", "spark-variant",
-    // Scala
-    "scala-library", "scala-reflect", "scala-compiler",
-    // Jackson databind (provided, but NOT jackson-core/annotations)
-    "jackson-databind",
-    // Commons lang (v2, not v3)
-    "commons-lang-2",
-    // Jersey and related
-    "jersey-", "hk2-", "aopalliance", "mimepull", "javassist", "osgi-resource-locator",
-    // Log4j and logging
-    "log4j-", "slf4j-",
-    // Hadoop
-    "hadoop-",
-    // Avro
-    "avro-",
-    // Curator and ZooKeeper
-    "curator-", "zookeeper-",
-    // Snappy
-    "snappy-java",
-    // Additional transitive deps from Spark core that should be excluded
-    "py4j", "jline", "janino", "commons-compiler",
-    "metrics-core", "metrics-jmx", "metrics-json", "metrics-jvm", "metrics-graphite",
-    "RoaringBitmap", "shims",
-    "rocksdbjni",
-    "leveldbjni", "leveldb",
-    "unused-1",
-    // Web UI related
-    "jakarta.", "javax.",
-    // Guava (Spark's shaded)
-    "guava-",
-    // Spark core transitive deps
-    "stream-", // com.clearspring.analytics:stream
-    "kryo", "minlog", // com.esotericsoftware:kryo
-    "icu4j", // com.ibm.icu:icu4j
-    "compress-lzf", // com.ning:compress-lzf
-    "paranamer", // com.thoughtworks.paranamer
-    "chill", // com.twitter:chill
-    "json4s-", // org.json4s
-    "jctools-", // org.jctools
-    "jspecify", // org.jspecify
-    "objenesis", // org.objenesis
-    // Other Spark deps
-    "commons-crypto", "commons-text", "commons-io", "commons-collections",
-    "commons-math", "commons-net", "commons-pool", "commons-logging",
-    "ivy-", "oro-", "velocity-", "xbean-",
-    "audience-annotations", // org.apache.yetus
-    "jetty-", // jetty already shaded in core
-    "activation", "annotation-api", "jaxb", "stax",
-    // Large transitive deps from Spark core
-    "fastutil-", // it.unimi.dsi:fastutil (huge library)
-    "netty-tcnative", "netty-codec-native-quic", // native SSL libs
-    "jna", "jna-platform", // JNA (Spark core)
-    "gson", // Spark core uses shaded Guava instead
-    "jsr305", // findbugs annotations
-    "checker-qual", // Checker framework
-    "error_prone_annotations", // Google error-prone
-    "j2objc-annotations", // J2ObjC
-    "listenablefuture", // Guava's ListenableFuture
-    "failureaccess", // Guava internal
-    // Additional exclusions found by comparing with Maven
-    "tink-", // com.google.crypto.tink
-    "protobuf-java", // com.google.protobuf (not needed for kinesis)
-    "guava", // com.google.common (Guava)
-    "roaringbitmap", // org.roaringbitmap
-    "lz4-java", // net.jpountz.lz4
-    "pickle", // net.razorvine.pickle (py4j related)
-    "scala-xml", // scala-xml (not needed)
-    // Netty exclusions - use individual modules, not netty-all uber jar
-    "netty-all", // uber jar with all netty modules
-    "netty-transport-native", // native transport (epoll, kqueue, io_uring)
-    "netty-transport-classes", // transport classes for native
-    "netty-resolver-dns", // DNS resolver
-    "netty-codec-dns", // DNS codec
-    "netty-codec-haproxy", "netty-codec-memcache", "netty-codec-mqtt",
-    "netty-codec-redis", "netty-codec-smtp", "netty-codec-stomp",
-    "netty-codec-xml", "netty-codec-protobuf", "netty-codec-marshalling",
-    "netty-transport-rxtx", "netty-transport-sctp", "netty-transport-udt",
-    "netty-handler-ssl-ocsp"
+  // ===== KINESIS ASSEMBLY EXCLUSIONS =====
+  // Organizations to completely exclude from Kinesis assembly
+  private val kinesisExcludedOrganizations = Set(
+    "org.apache.spark",           // All Spark modules (except kinesis-asl itself, handled separately)
+    "org.scala-lang",             // Scala library
+    "org.apache.hadoop",          // Hadoop
+    "org.apache.avro",            // Avro
+    "org.apache.curator",         // Curator
+    "org.apache.zookeeper",       // ZooKeeper
+    "org.apache.logging.log4j",   // Log4j
+    "org.slf4j",                  // SLF4J
+    "org.eclipse.jetty",          // Jetty (all variants)
+    "org.eclipse.jetty.ee10",
+    "org.eclipse.jetty.compression",
+    "com.google.guava",           // Guava
+    "com.google.protobuf",        // Protobuf
+    "com.google.crypto.tink",     // Tink
+    "it.unimi.dsi",               // fastutil
+    "net.java.dev.jna",           // JNA
+    "com.esotericsoftware",       // Kryo
+    "com.twitter",                // Chill
+    "org.json4s",                 // JSON4s
+    "io.dropwizard.metrics",      // Metrics
+    "org.glassfish.jersey",       // Jersey
+    "org.glassfish.hk2",          // HK2
+    "com.clearspring.analytics",  // Stream
+    "com.ibm.icu",                // ICU4J
+    "com.ning",                   // compress-lzf
+    "com.thoughtworks.paranamer", // Paranamer
+    "org.jctools",                // JCTools
+    "org.jspecify",               // JSpecify
+    "org.objenesis",              // Objenesis
+    "org.roaringbitmap",          // RoaringBitmap
+    "net.jpountz.lz4",            // LZ4
+    "net.razorvine"               // Pickle (py4j related)
   )
 
-  // Check if a jar should be excluded from kinesis assembly
-  private def isKinesisExcludedJar(jarName: String): Boolean = {
-    kinesisExcludedPrefixes.exists(prefix => jarName.startsWith(prefix))
+  // Kinesis-specific excluded artifact prefixes (for orgs not fully excluded)
+  private val kinesisExcludedArtifactPrefixes = Set(
+    // Jackson (only databind, not core/annotations)
+    "jackson-databind",
+    // Commons
+    "commons-lang-2", "commons-crypto", "commons-text", "commons-io",
+    "commons-collections", "commons-math", "commons-net", "commons-pool",
+    "commons-logging", "commons-compiler",
+    // Jersey/JAX-RS related
+    "aopalliance", "mimepull", "javassist", "osgi-resource-locator",
+    "jakarta.", "javax.",
+    // Other
+    "snappy-java", "py4j", "jline", "janino", "RoaringBitmap", "shims",
+    "rocksdbjni", "leveldbjni", "leveldb", "unused-1", "ivy-", "oro-",
+    "velocity-", "xbean-", "audience-annotations", "activation",
+    "annotation-api", "jaxb", "stax", "gson", "jsr305", "checker-qual",
+    "error_prone_annotations", "j2objc-annotations", "listenablefuture",
+    "failureaccess", "scala-xml", "minlog",
+    // Netty native/extras (exclude specific modules, not all netty)
+    "netty-all", "netty-transport-native", "netty-transport-classes",
+    "netty-resolver-dns", "netty-codec-dns", "netty-codec-haproxy",
+    "netty-codec-memcache", "netty-codec-mqtt", "netty-codec-redis",
+    "netty-codec-smtp", "netty-codec-stomp", "netty-codec-xml",
+    "netty-codec-protobuf", "netty-codec-marshalling", "netty-transport-rxtx",
+    "netty-transport-sctp", "netty-transport-udt", "netty-handler-ssl-ocsp",
+    "netty-tcnative", "netty-codec-native-quic"
+  )
+
+  /**
+   * Check if a jar should be excluded from Kinesis assembly using ModuleID matching.
+   * Note: kinesis-asl itself is NOT excluded even though org.apache.spark is in excluded orgs.
+   */
+  private def isKinesisExcludedJar(jar: Attributed[File]): Boolean = {
+    jar.get(moduleID.key) match {
+      case Some(mod) =>
+        // Don't exclude kinesis-asl itself
+        if (mod.organization == "org.apache.spark" && mod.name.contains("kinesis")) {
+          false
+        } else {
+          // Check organization-level exclusion
+          kinesisExcludedOrganizations.contains(mod.organization) ||
+            // Check artifact prefix exclusion
+            kinesisExcludedArtifactPrefixes.exists(prefix => mod.name.startsWith(prefix))
+        }
+      case None =>
+        // Fallback to jar name matching
+        isKinesisExcludedJarByName(jar.data.getName)
+    }
+  }
+
+  /** Fallback jar name matching for Kinesis assembly */
+  private def isKinesisExcludedJarByName(jarName: String): Boolean = {
+    // Don't exclude kinesis-asl itself
+    if (jarName.contains("kinesis")) return false
+
+    kinesisExcludedArtifactPrefixes.exists(prefix => jarName.startsWith(prefix)) ||
+      jarName.startsWith("spark-") || jarName.startsWith("scala-") ||
+      jarName.startsWith("hadoop-") || jarName.startsWith("avro-") ||
+      jarName.startsWith("curator-") || jarName.startsWith("zookeeper-") ||
+      jarName.startsWith("log4j-") || jarName.startsWith("slf4j-") ||
+      jarName.startsWith("jetty-") || jarName.startsWith("guava-") ||
+      jarName.startsWith("protobuf-") || jarName.startsWith("tink-") ||
+      jarName.startsWith("fastutil-") || jarName.startsWith("jna-") ||
+      jarName.startsWith("kryo-") || jarName.startsWith("chill-") ||
+      jarName.startsWith("json4s-") || jarName.startsWith("metrics-") ||
+      jarName.startsWith("jersey-") || jarName.startsWith("hk2-") ||
+      jarName.startsWith("stream-") || jarName.startsWith("icu4j-") ||
+      jarName.startsWith("compress-lzf-") || jarName.startsWith("paranamer-") ||
+      jarName.startsWith("jctools-") || jarName.startsWith("objenesis-") ||
+      jarName.startsWith("roaringbitmap-") || jarName.startsWith("lz4-") ||
+      jarName.startsWith("pickle-")
   }
 
   // Kinesis assembly settings - exclude jars matching provided scope
@@ -491,7 +543,7 @@ object Shading {
     assembly / assemblyOption := (assembly / assemblyOption).value.withIncludeScala(false),
     assembly / assemblyExcludedJars := {
       val cp = (assembly / fullClasspath).value
-      cp.filter(jar => isKinesisExcludedJar(jar.data.getName))
+      cp.filter(jar => isKinesisExcludedJar(jar))
     }
   )
 
@@ -539,14 +591,15 @@ object Shading {
   /**
    * Patterns that should NOT exist in a correctly shaded assembly.
    * If any of these are found, shading failed.
+   * These are public so users can combine them with custom patterns if needed.
    */
-  private val coreForbiddenPatterns = Seq(
+  val coreForbiddenPatterns: Seq[String] = Seq(
     "org/eclipse/jetty/",      // Should be relocated to org/sparkproject/jetty/
     "com/google/common/",      // Should be relocated to org/sparkproject/guava/
     "com/google/protobuf/"     // Should be relocated to org/sparkproject/spark_core/protobuf/
   )
 
-  private val connectClientForbiddenPatterns = Seq(
+  val connectClientForbiddenPatterns: Seq[String] = Seq(
     "com/google/common/",      // Should be relocated to org/sparkproject/connect/guava/
     "com/google/protobuf/",    // Should be relocated to org/sparkproject/com/google/protobuf/
     "io/grpc/",                // Should be relocated to org/sparkproject/io/grpc/
@@ -585,7 +638,7 @@ object Shading {
           if (matches.size > 5) log.error(s"  ... and ${matches.size - 5} more")
           Some(s"Pattern '$pattern': ${matches.size} unshaded classes")
         } else {
-          log.info(s"✓ No unshaded classes matching '$pattern'")
+          log.info(s"[OK] No unshaded classes matching '$pattern'")
           None
         }
       }
