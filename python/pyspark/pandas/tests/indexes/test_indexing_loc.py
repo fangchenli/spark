@@ -58,9 +58,13 @@ class IndexingLocMixin:
         self.assert_eq(psdf.loc[[5]], pdf.loc[[5]])
         self.assert_eq(psdf.loc[:], pdf.loc[:])
 
-        # TODO?: self.assert_eq(psdf.loc[[3, 4, 1, 8]], pdf.loc[[3, 4, 1, 8]])
-        # TODO?: self.assert_eq(psdf.loc[[3, 4, 1, 9]], pdf.loc[[3, 4, 1, 9]])
-        # TODO?: self.assert_eq(psdf.loc[np.array([3, 4, 1, 9])], pdf.loc[np.array([3, 4, 1, 9])])
+        # A list/array of labels selects the matching rows when all labels exist, and raises
+        # KeyError if any label is missing (SPARK-46306). Sort the result since pandas-on-Spark
+        # does not preserve the order of the requested labels.
+        self.assert_eq(psdf.loc[[3, 1, 8]].sort_index(), pdf.loc[[3, 1, 8]].sort_index())
+        self.assertRaises(KeyError, lambda: psdf.loc[[3, 4, 1, 8]])
+        self.assertRaises(KeyError, lambda: psdf.loc[[3, 4, 1, 9]])
+        self.assertRaises(KeyError, lambda: psdf.loc[np.array([3, 4, 1, 9])])
 
         self.assert_eq(psdf.a.loc[5:5], pdf.a.loc[5:5])
         self.assert_eq(psdf.a.loc[3:8], pdf.a.loc[3:8])
@@ -68,10 +72,10 @@ class IndexingLocMixin:
         self.assert_eq(psdf.a.loc[3:], pdf.a.loc[3:])
         self.assert_eq(psdf.a.loc[[5]], pdf.a.loc[[5]])
 
-        # TODO?: self.assert_eq(psdf.a.loc[[3, 4, 1, 8]], pdf.a.loc[[3, 4, 1, 8]])
-        # TODO?: self.assert_eq(psdf.a.loc[[3, 4, 1, 9]], pdf.a.loc[[3, 4, 1, 9]])
-        # TODO?: self.assert_eq(psdf.a.loc[np.array([3, 4, 1, 9])],
-        #                       pdf.a.loc[np.array([3, 4, 1, 9])])
+        self.assert_eq(psdf.a.loc[[3, 1, 8]].sort_index(), pdf.a.loc[[3, 1, 8]].sort_index())
+        self.assertRaises(KeyError, lambda: psdf.a.loc[[3, 4, 1, 8]])
+        self.assertRaises(KeyError, lambda: psdf.a.loc[[3, 4, 1, 9]])
+        self.assertRaises(KeyError, lambda: psdf.a.loc[np.array([3, 4, 1, 9])])
 
         self.assert_eq(psdf.a.loc[[]], pdf.a.loc[[]])
         self.assert_eq(psdf.a.loc[np.array([])], pdf.a.loc[np.array([])])

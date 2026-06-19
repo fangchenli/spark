@@ -1210,6 +1210,24 @@ class LocIndexer(LocIndexerLike):
         elif self._internal.index_level == 1:
             index_column = self._psdf_or_psser.index.to_series()
             index_data_type = index_column.spark.data_type
+            cond = index_column.spark.column.isin(
+                [F.lit(r).cast(index_data_type) for r in rows_sel]
+            )
+
+            # pandas raises a KeyError if any requested label is missing from the index.
+            # Collect the distinct subset of requested labels that actually exist (bounded by
+            # the number of requested labels) and raise for the ones that do not.
+            existing = {
+                row[0]
+                for row in self._internal.spark_frame.select(index_column.spark.column)
+                .where(cond)
+                .distinct()
+                .collect()
+            }
+            missing = [r for r in rows_sel if r not in existing]
+            if missing:
+                raise KeyError(f"{missing} not in index")
+
             if len(rows_sel) == 1:
                 return (
                     index_column.spark.column == F.lit(rows_sel[0]).cast(index_data_type),
@@ -1217,13 +1235,7 @@ class LocIndexer(LocIndexerLike):
                     None,
                 )
             else:
-                return (
-                    index_column.spark.column.isin(
-                        [F.lit(r).cast(index_data_type) for r in rows_sel]
-                    ),
-                    None,
-                    None,
-                )
+                return (cond, None, None)
         else:
             raise LocIndexer._NotImplemented("Cannot select with MultiIndex with Spark.")
 
