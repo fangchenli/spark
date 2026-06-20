@@ -829,6 +829,33 @@ class ArrowArrayToPandasConversionTests(unittest.TestCase):
         self.assertIsNone(numpy.iloc[1])
         self.assertEqual(legacy.tolist(), numpy.tolist())
 
+    def test_ml_udt_convert_numpy_matches_legacy(self):
+        """convert_numpy matches convert_legacy for the real StructType-backed ML UDTs
+        (VectorUDT/MatrixUDT, dense and sparse), which is the motivating case for this fix.
+
+        TODO: Remove when convert_legacy is removed.
+        """
+        import pandas as pd
+        import pyarrow as pa
+        from pyspark.ml.linalg import VectorUDT, Vectors, MatrixUDT, Matrices
+        from pyspark.sql.pandas.types import to_arrow_type
+
+        cases = [
+            (VectorUDT(), [Vectors.dense([1.0, 2.0, 3.0]), None]),
+            (VectorUDT(), [Vectors.sparse(3, {0: 1.0, 2: 3.0})]),
+            (MatrixUDT(), [Matrices.dense(2, 2, [1.0, 2.0, 3.0, 4.0])]),
+            (MatrixUDT(), [Matrices.sparse(2, 2, [0, 1, 2], [0, 1], [3.0, 4.0])]),
+        ]
+        for udt, values in cases:
+            with self.subTest(udt=type(udt).__name__):
+                arr = pa.array(
+                    [udt.serialize(v) if v is not None else None for v in values],
+                    type=to_arrow_type(udt.sqlType()),
+                )
+                legacy = ArrowArrayToPandasConversion.convert_legacy(arr, udt, timezone="UTC")
+                numpy = ArrowArrayToPandasConversion.convert_numpy(arr, udt, timezone="UTC")
+                pd.testing.assert_series_equal(legacy, numpy)
+
     def test_unsafe_udt_routes_to_legacy(self):
         """A UDT whose sqlType has a field needing value conversion from to_pandas() output
         (a Timestamp) is not deserialize-ready on the numpy path, so _prefer_convert_numpy must
