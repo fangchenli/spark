@@ -80,6 +80,81 @@ class Score:
         return self.score == other.score
 
 
+class PointStructUDT(UserDefinedType):
+    """A UDT whose sqlType is a StructType and whose deserialize uses positional access
+    (datum[0], datum[1]). This reproduces the shape that real ML UDTs like VectorUDT/MatrixUDT
+    use: arr.to_pandas() yields a dict for the struct, which must be rebuilt into a positional
+    Row before deserialize, otherwise datum[0] raises KeyError.
+    """
+
+    @classmethod
+    def sqlType(cls):
+        return StructType(
+            [
+                StructField("x", DoubleType(), False),
+                StructField("y", DoubleType(), False),
+            ]
+        )
+
+    @classmethod
+    def module(cls):
+        return "pyspark.sql.tests.test_conversion"
+
+    def serialize(self, obj):
+        return (obj.x, obj.y)
+
+    def deserialize(self, datum):
+        return PointStruct(datum[0], datum[1])
+
+
+class PointStruct:
+    __UDT__ = PointStructUDT()
+
+    def __init__(self, x, y):
+        self.x = x
+        self.y = y
+
+    def __eq__(self, other):
+        return isinstance(other, PointStruct) and self.x == other.x and self.y == other.y
+
+
+class TimestampStructUDT(UserDefinedType):
+    """A UDT whose sqlType StructType has a field needing value conversion from to_pandas()
+    output (a Timestamp). Such UDTs are NOT deserialize-ready from the numpy path and must
+    fall back to convert_legacy.
+    """
+
+    @classmethod
+    def sqlType(cls):
+        return StructType(
+            [
+                StructField("tag", StringType(), False),
+                StructField("t", TimestampType(), True),
+            ]
+        )
+
+    @classmethod
+    def module(cls):
+        return "pyspark.sql.tests.test_conversion"
+
+    def serialize(self, obj):
+        return (obj.tag, obj.t)
+
+    def deserialize(self, datum):
+        return TimestampStruct(datum[0], datum[1])
+
+
+class TimestampStruct:
+    __UDT__ = TimestampStructUDT()
+
+    def __init__(self, tag, t):
+        self.tag = tag
+        self.t = t
+
+    def __eq__(self, other):
+        return isinstance(other, TimestampStruct) and self.tag == other.tag and self.t == other.t
+
+
 @unittest.skipIf(not have_pyarrow, pyarrow_requirement_message)
 class ArrowBatchTransformerTests(unittest.TestCase):
     def test_flatten_struct_basic(self):
@@ -730,6 +805,92 @@ class ArrowArrayToPandasConversionTests(unittest.TestCase):
         result = ArrowArrayToPandasConversion.convert_numpy(chunked, ExamplePointUDT())
         self.assertEqual(result.iloc[0], ExamplePoint(1.0, 2.0))
         self.assertEqual(result.iloc[1], ExamplePoint(3.0, 4.0))
+
+    def test_struct_backed_udt_convert_numpy(self):
+        """Regression (SPARK-55462): a UDT whose sqlType is a StructType (e.g. VectorUDT/
+        MatrixUDT). arr.to_pandas() yields a dict for the struct; deserialize uses positional
+        access, so the dict must be rebuilt into a Row first. Previously convert_numpy passed
+        the raw dict to deserialize and raised KeyError. Must match convert_legacy.
+        """
+        import pyarrow as pa
+
+        sql_arrow_type = pa.struct(
+            [
+                pa.field("x", pa.float64(), nullable=False),
+                pa.field("y", pa.float64(), nullable=False),
+            ]
+        )
+        arr = pa.array([{"x": 1.0, "y": 2.0}, None], type=sql_arrow_type)
+        spark_type = PointStructUDT()
+
+        legacy = ArrowArrayToPandasConversion.convert_legacy(arr, spark_type)
+        numpy = ArrowArrayToPandasConversion.convert_numpy(arr, spark_type)
+        self.assertEqual(numpy.iloc[0], PointStruct(1.0, 2.0))
+        self.assertIsNone(numpy.iloc[1])
+        self.assertEqual(legacy.tolist(), numpy.tolist())
+
+    def test_unsafe_udt_routes_to_legacy(self):
+        """A UDT whose sqlType has a field needing value conversion from to_pandas() output
+        (a Timestamp) is not deserialize-ready on the numpy path, so _prefer_convert_numpy must
+        route it to convert_legacy. It must then convert correctly through the dispatcher.
+        """
+        import pandas as pd
+        import pyarrow as pa
+
+        prefer = ArrowArrayToPandasConversion._prefer_convert_numpy
+        self.assertTrue(prefer(PointStructUDT(), False))  # numeric struct stays on numpy
+        self.assertFalse(prefer(TimestampStructUDT(), False))  # timestamp field -> legacy
+
+        sql_arrow_type = pa.struct(
+            [
+                pa.field("tag", pa.string(), nullable=False),
+                pa.field("t", pa.timestamp("us"), nullable=True),
+            ]
+        )
+        ts = datetime.datetime(2020, 1, 1)
+        arr = pa.array([("a", ts), None], type=sql_arrow_type)
+        result = ArrowArrayToPandasConversion.convert(
+            arr, TimestampStructUDT(), timezone="UTC", struct_in_pandas="dict"
+        )
+        self.assertEqual(result.iloc[0], TimestampStruct("a", pd.Timestamp(ts)))
+        self.assertIsNone(result.iloc[1])
+
+    def test_df_for_struct_udt_field_routing(self):
+        """A direct UDT field in a df_for_struct StructType is converted by calling convert_numpy
+        per field, so it must be screened by the same UDT safety predicate: a safe (numeric)
+        UDT field stays on numpy, an unsafe (Timestamp) UDT field routes the struct to legacy
+        and still converts correctly.
+        """
+        import pandas as pd
+        import pyarrow as pa
+
+        prefer = ArrowArrayToPandasConversion._prefer_convert_numpy
+        safe_struct = StructType([StructField("u", PointStructUDT())])
+        unsafe_struct = StructType([StructField("u", TimestampStructUDT())])
+        self.assertTrue(prefer(safe_struct, True))
+        self.assertFalse(prefer(unsafe_struct, True))
+
+        ts = datetime.datetime(2020, 1, 1)
+        arr = pa.array(
+            [{"u": ("a", ts)}],
+            type=pa.struct(
+                [
+                    pa.field(
+                        "u",
+                        pa.struct(
+                            [
+                                pa.field("tag", pa.string(), nullable=False),
+                                pa.field("t", pa.timestamp("us"), nullable=True),
+                            ]
+                        ),
+                    )
+                ]
+            ),
+        )
+        result = ArrowArrayToPandasConversion.convert(
+            arr, unsafe_struct, timezone="UTC", struct_in_pandas="dict", df_for_struct=True
+        )
+        self.assertEqual(result["u"].iloc[0], TimestampStruct("a", pd.Timestamp(ts)))
 
     def test_variant_convert_numpy(self):
         import pyarrow as pa

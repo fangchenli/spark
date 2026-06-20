@@ -1685,6 +1685,41 @@ class ArrowArrayToPandasConversion:
         )
         return converter(ser)
 
+    @staticmethod
+    def _is_numpy_safe_udt_sqltype(dt: DataType) -> bool:
+        """Whether a UDT's sqlType can be deserialized directly from arr.to_pandas() output
+        on the numpy path.
+
+        The numpy UDT path rebuilds the positional Row from arr.to_pandas() output and calls
+        udt.deserialize on it. That output is only deserialize-ready when every leaf is a type
+        whose to_pandas() representation needs no further value conversion: numeric and boolean
+        types (and arrays/structs of those). Types like Timestamp/Date-of-object/Variant/Map,
+        or arrays/structs containing them, need conversion that this path does not apply, so
+        such UDTs must fall back to convert_legacy.
+
+        Covers the in-tree UDTs (e.g. VectorUDT, MatrixUDT, ExamplePointUDT), whose sqlTypes
+        are composed solely of numeric/boolean fields and numeric arrays.
+        """
+        numeric_or_bool = (
+            BooleanType,
+            ByteType,
+            ShortType,
+            IntegerType,
+            LongType,
+            FloatType,
+            DoubleType,
+        )
+        if isinstance(dt, numeric_or_bool):
+            return True
+        elif isinstance(dt, ArrayType):
+            return ArrowArrayToPandasConversion._is_numpy_safe_udt_sqltype(dt.elementType)
+        elif isinstance(dt, StructType):
+            return all(
+                ArrowArrayToPandasConversion._is_numpy_safe_udt_sqltype(f.dataType)
+                for f in dt.fields
+            )
+        return False
+
     @classmethod
     def _prefer_convert_numpy(
         cls,
@@ -1710,10 +1745,18 @@ class ArrowArrayToPandasConversion:
             GeographyType,
             GeometryType,
         )
+
+        def field_supported(dt: DataType) -> bool:
+            # A UDT only stays on the numpy path when its sqlType is deserialize-ready from
+            # to_pandas() output; otherwise it must fall back to convert_legacy.
+            if isinstance(dt, UserDefinedType):
+                return cls._is_numpy_safe_udt_sqltype(dt.sqlType())
+            return isinstance(dt, supported_types)
+
         if df_for_struct and isinstance(spark_type, StructType):
-            return all(isinstance(f.dataType, supported_types) for f in spark_type.fields)
+            return all(field_supported(f.dataType) for f in spark_type.fields)
         else:
-            return isinstance(spark_type, supported_types)
+            return field_supported(spark_type)
 
     @classmethod
     def convert_numpy(
@@ -1809,10 +1852,21 @@ class ArrowArrayToPandasConversion:
             series = arr.to_pandas()
         elif isinstance(spark_type, UserDefinedType):
             udt: UserDefinedType = spark_type
+            # arr.to_pandas() yields the raw sqlType shape (e.g. a dict for a StructType-backed
+            # UDT like VectorUDT/MatrixUDT). Rebuild the positional Row that deserialize()
+            # expects via the Arrow->Rows converter; none_on_identity=True returns None when no
+            # restructuring is needed (e.g. ArrayType-backed UDTs), preserving direct deserialize.
+            sql_conv = ArrowTableToRowsConversion._create_converter(
+                udt.sqlType(), none_on_identity=True
+            )
             series = arr.to_pandas()
             series = series.apply(
                 lambda v: (
-                    v if hasattr(v, "__UDT__") else udt.deserialize(v) if v is not None else None
+                    None
+                    if v is None
+                    else v
+                    if hasattr(v, "__UDT__")
+                    else udt.deserialize(sql_conv(v) if sql_conv is not None else v)
                 )
             )
         elif isinstance(spark_type, VariantType):
