@@ -80,79 +80,38 @@ class Score:
         return self.score == other.score
 
 
-class PointStructUDT(UserDefinedType):
-    """A UDT whose sqlType is a StructType and whose deserialize uses positional access
-    (datum[0], datum[1]). This reproduces the shape that real ML UDTs like VectorUDT/MatrixUDT
-    use: arr.to_pandas() yields a dict for the struct, which must be rebuilt into a positional
-    Row before deserialize, otherwise datum[0] raises KeyError.
+class XsUDT(UserDefinedType):
+    """A UDT whose sqlType StructType has an array field and whose deserialize requires a
+    Python list (not an ndarray). Verifies that convert_numpy reshapes the sqlType payload
+    the same way convert_legacy does (arrays -> lists via ndarray_as_list), rather than
+    passing the raw np.ndarray from arr.to_pandas() to deserialize.
     """
 
     @classmethod
     def sqlType(cls):
-        return StructType(
-            [
-                StructField("x", DoubleType(), False),
-                StructField("y", DoubleType(), False),
-            ]
-        )
+        return StructType([StructField("xs", ArrayType(IntegerType()), True)])
 
     @classmethod
     def module(cls):
         return "pyspark.sql.tests.test_conversion"
 
     def serialize(self, obj):
-        return (obj.x, obj.y)
+        return (obj.xs,)
 
     def deserialize(self, datum):
-        return PointStruct(datum[0], datum[1])
+        xs = datum[0]
+        assert isinstance(xs, list), f"expected list, got {type(xs).__name__}"
+        return Xs(xs)
 
 
-class PointStruct:
-    __UDT__ = PointStructUDT()
+class Xs:
+    __UDT__ = XsUDT()
 
-    def __init__(self, x, y):
-        self.x = x
-        self.y = y
-
-    def __eq__(self, other):
-        return isinstance(other, PointStruct) and self.x == other.x and self.y == other.y
-
-
-class TimestampStructUDT(UserDefinedType):
-    """A UDT whose sqlType StructType has a field needing value conversion from to_pandas()
-    output (a Timestamp). Such UDTs are NOT deserialize-ready from the numpy path and must
-    fall back to convert_legacy.
-    """
-
-    @classmethod
-    def sqlType(cls):
-        return StructType(
-            [
-                StructField("tag", StringType(), False),
-                StructField("t", TimestampType(), True),
-            ]
-        )
-
-    @classmethod
-    def module(cls):
-        return "pyspark.sql.tests.test_conversion"
-
-    def serialize(self, obj):
-        return (obj.tag, obj.t)
-
-    def deserialize(self, datum):
-        return TimestampStruct(datum[0], datum[1])
-
-
-class TimestampStruct:
-    __UDT__ = TimestampStructUDT()
-
-    def __init__(self, tag, t):
-        self.tag = tag
-        self.t = t
+    def __init__(self, xs):
+        self.xs = list(xs)
 
     def __eq__(self, other):
-        return isinstance(other, TimestampStruct) and self.tag == other.tag and self.t == other.t
+        return isinstance(other, Xs) and self.xs == other.xs
 
 
 @unittest.skipIf(not have_pyarrow, pyarrow_requirement_message)
@@ -806,34 +765,11 @@ class ArrowArrayToPandasConversionTests(unittest.TestCase):
         self.assertEqual(result.iloc[0], ExamplePoint(1.0, 2.0))
         self.assertEqual(result.iloc[1], ExamplePoint(3.0, 4.0))
 
-    def test_struct_backed_udt_convert_numpy(self):
-        """Regression (SPARK-55462): a UDT whose sqlType is a StructType (e.g. VectorUDT/
-        MatrixUDT). arr.to_pandas() yields a dict for the struct; deserialize uses positional
-        access, so the dict must be rebuilt into a Row first. Previously convert_numpy passed
-        the raw dict to deserialize and raised KeyError. Must match convert_legacy.
-        """
-        import pyarrow as pa
-
-        sql_arrow_type = pa.struct(
-            [
-                pa.field("x", pa.float64(), nullable=False),
-                pa.field("y", pa.float64(), nullable=False),
-            ]
-        )
-        arr = pa.array([{"x": 1.0, "y": 2.0}, None], type=sql_arrow_type)
-        spark_type = PointStructUDT()
-
-        legacy = ArrowArrayToPandasConversion.convert_legacy(arr, spark_type)
-        numpy = ArrowArrayToPandasConversion.convert_numpy(arr, spark_type)
-        self.assertEqual(numpy.iloc[0], PointStruct(1.0, 2.0))
-        self.assertIsNone(numpy.iloc[1])
-        self.assertEqual(legacy.tolist(), numpy.tolist())
-
-    def test_ml_udt_convert_numpy_matches_legacy(self):
-        """convert_numpy matches convert_legacy for the real StructType-backed ML UDTs
-        (VectorUDT/MatrixUDT, dense and sparse), which is the motivating case for this fix.
-
-        TODO: Remove when convert_legacy is removed.
+    def test_struct_backed_udt_matches_legacy(self):
+        """Regression (SPARK-55462): convert_numpy must convert StructType-backed UDTs
+        (VectorUDT/MatrixUDT). arr.to_pandas() yields a dict for the struct sqlType; the
+        payload must be reshaped into a positional Row before deserialize. Previously this
+        raised KeyError. Output must match convert_legacy.
         """
         import pandas as pd
         import pyarrow as pa
@@ -856,68 +792,23 @@ class ArrowArrayToPandasConversionTests(unittest.TestCase):
                 numpy = ArrowArrayToPandasConversion.convert_numpy(arr, udt, timezone="UTC")
                 pd.testing.assert_series_equal(legacy, numpy)
 
-    def test_unsafe_udt_routes_to_legacy(self):
-        """A UDT whose sqlType has a field needing value conversion from to_pandas() output
-        (a Timestamp) is not deserialize-ready on the numpy path, so _prefer_convert_numpy must
-        route it to convert_legacy. It must then convert correctly through the dispatcher.
+    def test_udt_array_field_matches_legacy(self):
+        """A UDT whose sqlType has an array field and whose deserialize requires a list:
+        convert_numpy reshapes arrays to lists (ndarray_as_list semantics) like convert_legacy,
+        so deserialize receives a list, not the raw ndarray. Output must match convert_legacy.
         """
         import pandas as pd
         import pyarrow as pa
 
-        prefer = ArrowArrayToPandasConversion._prefer_convert_numpy
-        self.assertTrue(prefer(PointStructUDT(), False))  # numeric struct stays on numpy
-        self.assertFalse(prefer(TimestampStructUDT(), False))  # timestamp field -> legacy
-
-        sql_arrow_type = pa.struct(
-            [
-                pa.field("tag", pa.string(), nullable=False),
-                pa.field("t", pa.timestamp("us"), nullable=True),
-            ]
-        )
-        ts = datetime.datetime(2020, 1, 1)
-        arr = pa.array([("a", ts), None], type=sql_arrow_type)
-        result = ArrowArrayToPandasConversion.convert(
-            arr, TimestampStructUDT(), timezone="UTC", struct_in_pandas="dict"
-        )
-        self.assertEqual(result.iloc[0], TimestampStruct("a", pd.Timestamp(ts)))
-        self.assertIsNone(result.iloc[1])
-
-    def test_df_for_struct_udt_field_routing(self):
-        """A direct UDT field in a df_for_struct StructType is converted by calling convert_numpy
-        per field, so it must be screened by the same UDT safety predicate: a safe (numeric)
-        UDT field stays on numpy, an unsafe (Timestamp) UDT field routes the struct to legacy
-        and still converts correctly.
-        """
-        import pandas as pd
-        import pyarrow as pa
-
-        prefer = ArrowArrayToPandasConversion._prefer_convert_numpy
-        safe_struct = StructType([StructField("u", PointStructUDT())])
-        unsafe_struct = StructType([StructField("u", TimestampStructUDT())])
-        self.assertTrue(prefer(safe_struct, True))
-        self.assertFalse(prefer(unsafe_struct, True))
-
-        ts = datetime.datetime(2020, 1, 1)
         arr = pa.array(
-            [{"u": ("a", ts)}],
-            type=pa.struct(
-                [
-                    pa.field(
-                        "u",
-                        pa.struct(
-                            [
-                                pa.field("tag", pa.string(), nullable=False),
-                                pa.field("t", pa.timestamp("us"), nullable=True),
-                            ]
-                        ),
-                    )
-                ]
-            ),
+            [{"xs": [1, 2, 3]}, {"xs": [4, 5]}],
+            type=pa.struct([pa.field("xs", pa.list_(pa.int32()), nullable=True)]),
         )
-        result = ArrowArrayToPandasConversion.convert(
-            arr, unsafe_struct, timezone="UTC", struct_in_pandas="dict", df_for_struct=True
-        )
-        self.assertEqual(result["u"].iloc[0], TimestampStruct("a", pd.Timestamp(ts)))
+        legacy = ArrowArrayToPandasConversion.convert_legacy(arr, XsUDT(), timezone="UTC")
+        numpy = ArrowArrayToPandasConversion.convert_numpy(arr, XsUDT(), timezone="UTC")
+        self.assertEqual(numpy.iloc[0], Xs([1, 2, 3]))
+        self.assertEqual(numpy.iloc[1], Xs([4, 5]))
+        pd.testing.assert_series_equal(legacy, numpy)
 
     def test_variant_convert_numpy(self):
         import pyarrow as pa
