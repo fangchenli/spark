@@ -114,6 +114,37 @@ class Xs:
         return isinstance(other, Xs) and self.xs == other.xs
 
 
+class TsUDT(UserDefinedType):
+    """A UDT whose sqlType StructType has a TimestampType field. Used to verify the UDT
+    branch does not double-process timestamps: it must convert from the original Arrow
+    representation (like convert_legacy), not from preprocess_time's timezone-stripped output.
+    """
+
+    @classmethod
+    def sqlType(cls):
+        return StructType([StructField("t", TimestampType(), True)])
+
+    @classmethod
+    def module(cls):
+        return "pyspark.sql.tests.test_conversion"
+
+    def serialize(self, obj):
+        return (obj.t,)
+
+    def deserialize(self, datum):
+        return Ts(datum[0])
+
+
+class Ts:
+    __UDT__ = TsUDT()
+
+    def __init__(self, t):
+        self.t = t
+
+    def __eq__(self, other):
+        return isinstance(other, Ts) and self.t == other.t
+
+
 @unittest.skipIf(not have_pyarrow, pyarrow_requirement_message)
 class ArrowBatchTransformerTests(unittest.TestCase):
     def test_flatten_struct_basic(self):
@@ -809,6 +840,31 @@ class ArrowArrayToPandasConversionTests(unittest.TestCase):
         self.assertEqual(numpy.iloc[0], Xs([1, 2, 3]))
         self.assertEqual(numpy.iloc[1], Xs([4, 5]))
         pd.testing.assert_series_equal(legacy, numpy)
+
+    def test_udt_timestamp_field_matches_legacy(self):
+        """A UDT whose sqlType has a TimestampType field must match convert_legacy across
+        timezones. convert_numpy preprocesses Arrow timestamps before the type dispatch, but
+        the UDT branch must convert from the original (un-preprocessed) array so the timestamp
+        is not double-processed -- otherwise a non-UTC Arrow timestamp tz shifts the value.
+        """
+        import pandas as pd
+        import pyarrow as pa
+
+        ts = datetime.datetime(2020, 1, 1, 2, 30, 0)
+        utc = datetime.timezone.utc
+        # the divergent case is a non-UTC Arrow timestamp tz; cover tz-naive and tz=UTC too
+        arrow_cases = [
+            ("tz-naive", pa.timestamp("us"), ts),
+            ("tz-UTC", pa.timestamp("us", tz="UTC"), ts.replace(tzinfo=utc)),
+            ("tz-NY", pa.timestamp("us", tz="America/New_York"), ts.replace(tzinfo=utc)),
+        ]
+        for label, pa_ts, value in arrow_cases:
+            arr = pa.array([{"t": value}], type=pa.struct([pa.field("t", pa_ts, nullable=True)]))
+            for tz in ["UTC", "America/Los_Angeles", "Asia/Singapore"]:
+                with self.subTest(arrow=label, session_tz=tz):
+                    legacy = ArrowArrayToPandasConversion.convert_legacy(arr, TsUDT(), timezone=tz)
+                    numpy = ArrowArrayToPandasConversion.convert_numpy(arr, TsUDT(), timezone=tz)
+                    pd.testing.assert_series_equal(legacy, numpy)
 
     def test_variant_convert_numpy(self):
         import pyarrow as pa

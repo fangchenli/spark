@@ -1763,6 +1763,13 @@ class ArrowArrayToPandasConversion:
             # This name will be dropped after pa.compute functions.
             ser_name = arr._name
 
+        # preprocess_time strips timezone / coerces units for the native conversion branches.
+        # Keep the original array for the UDT branch, which delegates to the pandas converter
+        # (_create_converter_to_pandas). That converter does its own timezone handling on the
+        # untouched Arrow-to-pandas representation, exactly like convert_legacy, so it must not
+        # receive preprocess_time's output -- otherwise a timestamp-backed UDT field whose Arrow
+        # timestamp carries a (non-UTC) timezone would be double-processed and shifted.
+        raw_arr = arr
         arr = ArrowArrayConversion.preprocess_time(arr)
 
         series: pd.Series
@@ -1827,7 +1834,9 @@ class ArrowArrayToPandasConversion:
                 ndarray_as_list=True,
                 integer_object_nulls=True,
             )
-            series = arr.to_pandas(
+            # Use the original array (not preprocess_time's output) so timestamp handling
+            # matches convert_legacy exactly.
+            series = raw_arr.to_pandas(
                 date_as_object=True,
                 coerce_temporal_nanoseconds=True,
                 integer_object_nulls=True,
