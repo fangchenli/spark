@@ -864,6 +864,26 @@ class ArrowArrayToPandasConversionTests(unittest.TestCase):
                 numpy = ArrowArrayToPandasConversion.convert_numpy(arr, udt, timezone="UTC")
                 pd.testing.assert_series_equal(legacy, numpy)
 
+    def test_udt_atomic_sqltype_with_null_matches_legacy(self):
+        """A UDT whose sqlType is atomic (not a struct) must match convert_legacy, including
+        how nulls reach deserialize.
+
+        Reshaping via udt.sqlType() would apply a Series-level dtype cast here, turning an
+        integral sqlType into a nullable extension dtype and handing deserialize a float/NaN
+        instead of an int and a preserved None. The UDT converter applies the element-level
+        conversion instead, so nulls stay None and values stay ints.
+        """
+        import pandas as pd
+        import pyarrow as pa
+
+        arr = pa.array([1, None, 3], type=pa.int32())
+        legacy = ArrowArrayToPandasConversion.convert_legacy(arr, ScoreUDT(), timezone="UTC")
+        numpy = ArrowArrayToPandasConversion.convert_numpy(arr, ScoreUDT(), timezone="UTC")
+        pd.testing.assert_series_equal(legacy, numpy)
+        self.assertIsNone(numpy.iloc[1])
+        self.assertEqual(numpy.iloc[0], Score(1))
+        self.assertIsInstance(numpy.iloc[0].score, int)
+
     def test_udt_array_field_matches_legacy(self):
         """A UDT whose sqlType has an array field and whose deserialize requires a list:
         convert_numpy reshapes arrays to lists (ndarray_as_list semantics) like convert_legacy,

@@ -1965,10 +1965,17 @@ class ArrowArrayToPandasConversion:
 
         ``arr.to_pandas()`` yields a dict for a ``StructType`` sqlType (e.g. ``VectorUDT`` /
         ``MatrixUDT``) and an ``np.ndarray`` for an array sqlType, but ``deserialize()`` expects a
-        positional ``Row`` with Python-list arrays. Reshape the payload with the same pandas
-        converter :meth:`convert_legacy` uses (struct -> Row, arrays -> lists via
-        ``ndarray_as_list=True``) before deserializing, so the result is identical to
-        ``convert_legacy`` for every sqlType shape.
+        positional ``Row`` with Python-list arrays. Delegate to the very converter
+        :meth:`convert_legacy` uses for a UDT column, so the result is identical to
+        ``convert_legacy`` for every sqlType shape by construction.
+
+        Note this passes ``udt`` itself, not ``udt.sqlType()``. The two are not
+        interchangeable: for an atomic sqlType, ``_create_converter_to_pandas(udt.sqlType())``
+        returns a *Series*-level dtype cast, whereas the UDT branch it reaches when given ``udt``
+        applies the *element*-level converter (``None`` for atomic types) and deserializes only
+        non-``None`` elements. Reshaping via the sqlType would therefore cast an integral sqlType
+        to a nullable extension dtype and hand ``deserialize`` a ``float``/``nan`` where
+        ``convert_legacy`` yields an ``int`` and a preserved ``None``.
 
         ``arr`` must be the array as it came from Arrow, *not*
         :meth:`ArrowArrayConversion.preprocess_time`'s output: the pandas converter does its own
@@ -1978,8 +1985,8 @@ class ArrowArrayToPandasConversion:
         TODO: reshape the sqlType via convert_numpy once it natively supports StructType/MapType,
         instead of reusing _create_converter_to_pandas.
         """
-        sql_conv = _create_converter_to_pandas(
-            udt.sqlType(),
+        udt_conv = _create_converter_to_pandas(
+            udt,
             nullable=True,
             timezone=timezone,
             struct_in_pandas="row",
@@ -1992,7 +1999,7 @@ class ArrowArrayToPandasConversion:
             coerce_temporal_nanoseconds=True,
             integer_object_nulls=True,
         )
-        return sql_conv(series).apply(lambda v: udt.deserialize(v) if v is not None else None)
+        return udt_conv(series)
 
     @classmethod
     def convert_numpy(
@@ -2043,11 +2050,8 @@ class ArrowArrayToPandasConversion:
             ser_name = arr._name
 
         # preprocess_time strips timezone / coerces units for the native conversion branches.
-        # Keep the original array for the UDT branch, which delegates to the pandas converter
-        # (_create_converter_to_pandas). That converter does its own timezone handling on the
-        # untouched Arrow-to-pandas representation, exactly like convert_legacy, so it must not
-        # receive preprocess_time's output -- otherwise a timestamp-backed UDT field whose Arrow
-        # timestamp carries a (non-UTC) timezone would be double-processed and shifted.
+        # Keep the original array for the UDT branch -- see _udt_from_arrow for why it must not
+        # receive preprocess_time's output.
         raw_arr = arr
         arr = ArrowArrayConversion.preprocess_time(arr)
 
