@@ -1954,6 +1954,46 @@ class ArrowArrayToPandasConversion:
         else:
             return isinstance(spark_type, supported_types)
 
+    @staticmethod
+    def _udt_from_arrow(
+        arr: Union["pa.Array", "pa.ChunkedArray"],
+        udt: UserDefinedType,
+        timezone: Optional[str],
+    ) -> "pd.Series":
+        """
+        Convert an Arrow array holding a UDT's ``sqlType`` payload to deserialized UDT objects.
+
+        ``arr.to_pandas()`` yields a dict for a ``StructType`` sqlType (e.g. ``VectorUDT`` /
+        ``MatrixUDT``) and an ``np.ndarray`` for an array sqlType, but ``deserialize()`` expects a
+        positional ``Row`` with Python-list arrays. Reshape the payload with the same pandas
+        converter :meth:`convert_legacy` uses (struct -> Row, arrays -> lists via
+        ``ndarray_as_list=True``) before deserializing, so the result is identical to
+        ``convert_legacy`` for every sqlType shape.
+
+        ``arr`` must be the array as it came from Arrow, *not*
+        :meth:`ArrowArrayConversion.preprocess_time`'s output: the pandas converter does its own
+        timezone handling on the untouched representation, so a timestamp-backed UDT field whose
+        Arrow timestamp carries a (non-UTC) timezone would otherwise be double-processed.
+
+        TODO: reshape the sqlType via convert_numpy once it natively supports StructType/MapType,
+        instead of reusing _create_converter_to_pandas.
+        """
+        sql_conv = _create_converter_to_pandas(
+            udt.sqlType(),
+            nullable=True,
+            timezone=timezone,
+            struct_in_pandas="row",
+            error_on_duplicated_field_names=True,
+            ndarray_as_list=True,
+            integer_object_nulls=True,
+        )
+        series = arr.to_pandas(
+            date_as_object=True,
+            coerce_temporal_nanoseconds=True,
+            integer_object_nulls=True,
+        )
+        return sql_conv(series).apply(lambda v: udt.deserialize(v) if v is not None else None)
+
     @classmethod
     def convert_numpy(
         cls,
@@ -2054,33 +2094,8 @@ class ArrowArrayToPandasConversion:
         ):
             series = arr.to_pandas()
         elif isinstance(spark_type, UserDefinedType):
-            udt: UserDefinedType = spark_type
-            # A UDT's sqlType may be a StructType (e.g. VectorUDT/MatrixUDT) or contain array
-            # fields. arr.to_pandas() yields a dict for structs and an np.ndarray for arrays,
-            # but deserialize() expects a positional Row with Python-list arrays. convert_numpy
-            # does not yet convert StructType/MapType natively, so reshape the sqlType payload
-            # with the same pandas converter convert_legacy uses (struct -> Row, arrays -> lists
-            # via ndarray_as_list=True), then deserialize. This keeps the output identical to
-            # convert_legacy for every UDT.
-            # TODO: reshape the sqlType via convert_numpy once it natively supports
-            # StructType/MapType, instead of reusing _create_converter_to_pandas.
-            sql_conv = _create_converter_to_pandas(
-                udt.sqlType(),
-                nullable=True,
-                timezone=timezone,
-                struct_in_pandas="row",
-                error_on_duplicated_field_names=True,
-                ndarray_as_list=True,
-                integer_object_nulls=True,
-            )
-            # Use the original array (not preprocess_time's output) so timestamp handling
-            # matches convert_legacy exactly.
-            series = raw_arr.to_pandas(
-                date_as_object=True,
-                coerce_temporal_nanoseconds=True,
-                integer_object_nulls=True,
-            )
-            series = sql_conv(series).apply(lambda v: udt.deserialize(v) if v is not None else None)
+            # Convert from raw_arr, not preprocess_time's output -- see _udt_from_arrow.
+            series = cls._udt_from_arrow(raw_arr, spark_type, timezone)
         elif isinstance(spark_type, VariantType):
             series = arr.to_pandas()
             series = series.map(

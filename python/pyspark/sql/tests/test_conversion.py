@@ -844,7 +844,8 @@ class ArrowArrayToPandasConversionTests(unittest.TestCase):
         """
         import pandas as pd
         import pyarrow as pa
-        from pyspark.ml.linalg import VectorUDT, Vectors, MatrixUDT, Matrices
+
+        from pyspark.ml.linalg import Matrices, MatrixUDT, Vectors, VectorUDT
         from pyspark.sql.pandas.types import to_arrow_type
 
         cases = [
