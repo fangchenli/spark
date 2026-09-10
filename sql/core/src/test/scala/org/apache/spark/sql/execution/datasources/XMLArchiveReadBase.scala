@@ -21,9 +21,8 @@ import java.io.File
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 
-import org.apache.spark.sql.DataFrame
+import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types.StringType
-import org.apache.spark.util.Utils
 
 /**
  * Binds [[ArchiveReadSuiteBase]]'s file-format hooks to XML. XML opts into the shared
@@ -49,24 +48,6 @@ trait XMLArchiveReadBase extends ArchiveReadSuiteBase {
   // elements as structs, so it keeps all three `supports*` defaults (inference, schema-merge,
   // complex types) and runs the full shared test set. Inference needs no trigger option, so
   // `inferenceOptions` keeps its empty default.
-
-  override protected def encodeFile(
-      df: DataFrame,
-      writeOptions: Map[String, String]): Array[Byte] = {
-    val dir = Utils.createTempDir(namePrefix = "archive-test-encode")
-    try {
-      df.coalesce(1).write.format("xml")
-        .options(Map("rowTag" -> rowTag) ++ writeOptions)
-        .mode("overwrite").save(dir.getCanonicalPath)
-      val parts = dir.listFiles().filter { f =>
-        f.isFile && !f.getName.startsWith("_") && !f.getName.startsWith(".") &&
-          !f.getName.endsWith(".crc")
-      }
-      assert(parts.length == 1,
-        s"expected exactly one data file, got: ${parts.map(_.getName).toList}")
-      Files.readAllBytes(parts.head.toPath)
-    } finally Utils.deleteRecursively(dir)
-  }
 
   /** Raw XML bytes, for tests that need precise control over the record layout. */
   protected def xmlBytes(s: String): Array[Byte] = s.getBytes(StandardCharsets.UTF_8)
@@ -152,4 +133,40 @@ trait XMLArchiveReadBase extends ArchiveReadSuiteBase {
       extraOptions = Map("multiLine" -> "true"),
       schema = corruptSchema)
   }
+
+  if (supportsMidAdvanceFailure) {
+    test("XML: multiLine inference keeps records read before a mid-advance failure " +
+        "(ignoreCorruptFiles)") {
+      // Entry 0 is read, then advancing to a later entry throws (not at open). A whole-archive drop
+      // would lose entry 0's `extra`; aborting the traversal would lose the sibling file's `later`.
+      val opts = Map("multiLine" -> "true")
+      withArchiveFile() { archive =>
+        writeArchiveFailingAfterFirstEntry(archive, entryName(0) ->
+          xmlBytes("<rows><row><id>1</id><name>Alice</name><extra>9</extra></row></rows>"))
+        Files.write(new File(archive.getParentFile, s"later.$fileExtension").toPath,
+          xmlBytes("<rows><row><id>2</id><name>Bob</name><later>7</later></row></rows>"))
+        withSQLConf(SQLConf.IGNORE_CORRUPT_FILES.key -> "true") {
+          val schema = inferredSchema(Seq(archive.getParentFile.getCanonicalPath), opts)
+          assert(schema.fieldNames.toSet == Set("id", "name", "extra", "later"),
+            "expected `extra` (pre-failure entry) and `later` (sibling file) in the inferred " +
+              s"schema after the mid-advance skip, got $schema")
+        }
+      }
+    }
+  }
 }
+
+class XMLTarArchiveReadSuite
+  extends ArchiveReadSuiteBase
+  with XMLArchiveReadBase
+  with TarArchiveReadBase
+
+class XMLZipArchiveReadSuite
+  extends ArchiveReadSuiteBase
+  with XMLArchiveReadBase
+  with ZipArchiveReadBase
+
+class XMLSevenZArchiveReadSuite
+  extends ArchiveReadSuiteBase
+  with XMLArchiveReadBase
+  with SevenZArchiveReadBase

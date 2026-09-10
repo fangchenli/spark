@@ -19,13 +19,14 @@ package org.apache.spark.sql
 
 import java.nio.charset.StandardCharsets
 import java.text.SimpleDateFormat
-import java.time.{Duration, LocalDateTime, Period}
+import java.time.{Duration, LocalDateTime, Period, ZoneOffset}
 import java.util.Locale
 
 import scala.jdk.CollectionConverters._
 
 import org.apache.spark.{SparkException, SparkRuntimeException,
   SparkUnsupportedOperationException, SparkUpgradeException}
+import org.apache.spark.sql.catalyst.util.TimestampNanosTestUtils
 import org.apache.spark.sql.catalyst.util.TimestampNanosTestUtils.foreachNanosPrecision
 import org.apache.spark.sql.errors.DataTypeErrors.toSQLType
 import org.apache.spark.sql.functions._
@@ -50,8 +51,12 @@ class CsvFunctionsSuite extends SharedSparkSession {
 
   test("SPARK-57164: from_csv with a nanos timestamp DDL schema string") {
     val df = Seq("2020-01-01T00:00:00.123456789").toDF("value")
-    withSQLConf(SQLConf.TIMESTAMP_NANOS_TYPES_ENABLED.key -> "true") {
+    // Fix the session timezone so the TIMESTAMP_LTZ expected value is deterministic.
+    withSQLConf(
+        SQLConf.TIMESTAMP_NANOS_TYPES_ENABLED.key -> "true",
+        SQLConf.SESSION_LOCAL_TIMEZONE.key -> "UTC") {
       foreachNanosPrecision { p =>
+        val nano = TimestampNanosTestUtils.nanoOfSecTruncator(p)(123456789)
         Seq(
           s"TIMESTAMP_NTZ($p)" -> TimestampNTZNanosType(p),
           s"TIMESTAMP_LTZ($p)" -> TimestampLTZNanosType(p),
@@ -62,12 +67,14 @@ class CsvFunctionsSuite extends SharedSparkSession {
               from_csv($"value", lit(s"c $spelling"), Map.empty[String, String].asJava).as("v"))
             // The schema string resolves to the nanos type ...
             assert(parsed.schema("v").dataType.asInstanceOf[StructType]("c").dataType === expected)
-            // ... but the CSV datasource does not support nanosecond timestamps yet, so the
-            // value converter rejects it at execution.
-            checkError(
-              exception = intercept[SparkUnsupportedOperationException](parsed.collect()),
-              condition = "UNSUPPORTED_DATATYPE",
-              parameters = Map("typeName" -> toSQLType(expected)))
+            // ... and the CSV datasource correctly parses the nanosecond timestamp, truncating
+            // sub-precision digits toward zero.
+            val expectedValue = expected match {
+              case _: TimestampNTZNanosType => LocalDateTime.of(2020, 1, 1, 0, 0, 0, nano)
+              case _: TimestampLTZNanosType =>
+                LocalDateTime.of(2020, 1, 1, 0, 0, 0, nano).toInstant(ZoneOffset.UTC)
+            }
+            checkAnswer(parsed, Row(Row(expectedValue)))
         }
       }
     }
@@ -862,6 +869,47 @@ class CsvFunctionsSuite extends SharedSparkSession {
       Seq(Row(s"""{null, $largeInput}""")))
   }
 
+  test("from_csv with variant: variantRespectInferSchema controls scalar inference") {
+    // from_csv shares the CSV parser, so it observes inferSchema only when
+    // variantRespectInferSchema is enabled: with inferSchema off the variant scalar stays a
+    // string, otherwise it is inferred. Without the flag, from_csv ignores inferSchema entirely.
+    val df = Seq("100").toDF("value")
+
+    // With variantRespectInferSchema enabled and inferSchema off the scalar is preserved as a
+    // string. inferSchema defaults to false, so setting the flag alone behaves the same.
+    for (options <- Seq(
+        Map("singleVariantColumn" -> "v", "variantRespectInferSchema" -> "true",
+          "inferSchema" -> "false"),
+        Map("singleVariantColumn" -> "v", "variantRespectInferSchema" -> "true"))) {
+      checkAnswer(
+        df.select(from_csv($"value", StructType.fromDDL("v variant"), options).cast("string")),
+        Seq(Row("""{{"_c0":"100"}}""")))
+    }
+
+    // Without variantRespectInferSchema, the scalar is inferred regardless of inferSchema.
+    // Both the default and explicitly configured inferSchema setting should result in inferred
+    // scalar values. Values should also be inferred when both options are enabled.
+    for (options <- Seq(
+        Map("singleVariantColumn" -> "v"),
+        Map("singleVariantColumn" -> "v", "inferSchema" -> "true"),
+        Map("singleVariantColumn" -> "v", "variantRespectInferSchema" -> "true",
+          "inferSchema" -> "true"))) {
+      checkAnswer(
+        df.select(from_csv($"value", StructType.fromDDL("v variant"), options).cast("string")),
+        Seq(Row("""{{"_c0":100}}""")))
+    }
+
+    // Explicit VariantType columns should behave the same. schema_of_variant tells the string
+    // "100" from the inferred long.
+    checkAnswer(
+      df.selectExpr("schema_of_variant(from_csv(value, 'a variant', " +
+        "map('variantRespectInferSchema', 'true', 'inferSchema', 'false')).a)"),
+      Seq(Row("STRING")))
+    checkAnswer(
+      df.selectExpr("schema_of_variant(from_csv(value, 'a variant').a)"),
+      Seq(Row("BIGINT")))
+  }
+
   test("from_csv with variant: extreme negative scale decimal does not hang") {
     // A value like "1E99999" parses to a BigDecimal with scale=-99999.
     // Calling setScale(0) on it would hang, so it should fall through to string.
@@ -929,7 +977,10 @@ class CsvFunctionsSuite extends SharedSparkSession {
       (3, LocalTime.of(14, 30, 45, 123000000), "14:30:45.123"),
       (4, LocalTime.of(14, 30, 45, 123400000), "14:30:45.1234"),
       (5, LocalTime.of(14, 30, 45, 123450000), "14:30:45.12345"),
-      (6, LocalTime.of(14, 30, 45, 123456000), "14:30:45.123456")
+      (6, LocalTime.of(14, 30, 45, 123456000), "14:30:45.123456"),
+      (7, LocalTime.of(14, 30, 45, 123456700), "14:30:45.1234567"),
+      (8, LocalTime.of(14, 30, 45, 123456780), "14:30:45.12345678"),
+      (9, LocalTime.of(14, 30, 45, 123456789), "14:30:45.123456789")
     )
 
     testData.foreach { case (precision, time, timeStr) =>

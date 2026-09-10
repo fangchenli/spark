@@ -26,7 +26,7 @@ import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.analysis.{EliminateSubqueryAliases, NamedRelation}
 import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder
 import org.apache.spark.sql.catalyst.expressions._
-import org.apache.spark.sql.catalyst.optimizer.{BuildLeft, BuildRight, BuildSide, JoinSelectionHelper, NormalizeFloatingNumbers}
+import org.apache.spark.sql.catalyst.optimizer.{BuildRight, BuildSide, JoinSelectionHelper, NormalizeFloatingNumbers, NullAwareAntiJoinPlanning}
 import org.apache.spark.sql.catalyst.planning._
 import org.apache.spark.sql.catalyst.plans._
 import org.apache.spark.sql.catalyst.plans.logical._
@@ -39,7 +39,7 @@ import org.apache.spark.sql.execution.aggregate.AggUtils
 import org.apache.spark.sql.execution.columnar.{InMemoryRelation, InMemoryTableScanExec}
 import org.apache.spark.sql.execution.command._
 import org.apache.spark.sql.execution.datasources.{LogicalRelation, WriteFiles, WriteFilesExec}
-import org.apache.spark.sql.execution.datasources.v2.DataSourceV2Relation
+import org.apache.spark.sql.execution.datasources.v2.{DataSourceV2Relation, StreamingDataSourceV2ScanRelation}
 import org.apache.spark.sql.execution.exchange.{REBALANCE_PARTITIONS_BY_COL, REBALANCE_PARTITIONS_BY_NONE, REPARTITION_BY_COL, REPARTITION_BY_NUM, ShuffleExchangeExec}
 import org.apache.spark.sql.execution.python._
 import org.apache.spark.sql.execution.python.streaming.{FlatMapGroupsInPandasWithStateExec, TransformWithStateInPySparkExec}
@@ -83,6 +83,19 @@ abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
       }
       p.setLogicalLink(logicalPlan)
       p
+    }
+  }
+
+  /**
+   * Whether this plan reads a streaming source in Real-Time Mode, which is the case when the
+   * relation carries a real-time mode duration -- the same signal that decides whether to plan
+   * a [[org.apache.spark.sql.execution.datasources.v2.RealTimeStreamScanExec]] for it.
+   */
+  private def isRealTimeMode(plan: LogicalPlan): Boolean = {
+    plan.collectLeaves().exists {
+      case s: StreamingDataSourceV2ScanRelation =>
+        s.relation.realTimeModeDuration.isDefined
+      case _ => false
     }
   }
 
@@ -206,8 +219,7 @@ abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
     }
 
     private def checkHintNonEquiJoin(hint: JoinHint): Unit = {
-      if (hintToShuffleHashJoin(hint) || hintToPreferShuffleHashJoin(hint) ||
-          hintToSortMergeJoin(hint)) {
+      if (hintToShuffleHashJoin(hint) || hintToSortMergeJoin(hint)) {
         assert(hint.leftHint.orElse(hint.rightHint).isDefined)
         hintErrorHandler.joinHintNotSupported(hint.leftHint.orElse(hint.rightHint).get,
           "no equi-join keys")
@@ -328,10 +340,18 @@ abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
             .getOrElse(createJoinWithoutHint())
         }
 
-      case j @ ExtractSingleColumnNullAwareAntiJoin(leftKeys, rightKeys)
-          if canBroadcastBySize(j.right, conf) =>
-        Seq(joins.BroadcastHashJoinExec(leftKeys, rightKeys, LeftAnti, BuildRight,
-          None, planLater(j.left), planLater(j.right), isNullAwareAntiJoin = true))
+      case j: logical.Join if ExtractSingleColumnNullAwareAntiJoin.extract(j).isDefined =>
+        val (leftKeys, rightKeys) = ExtractSingleColumnNullAwareAntiJoin.extract(j).get
+        NullAwareAntiJoinPlanning.decide(j, conf) match {
+          case NullAwareAntiJoinPlanning.BroadcastHash =>
+            Seq(joins.BroadcastHashJoinExec(leftKeys, rightKeys, LeftAnti, BuildRight,
+              None, planLater(j.left), planLater(j.right), isNullAwareAntiJoin = true))
+          case NullAwareAntiJoinPlanning.BroadcastNestedLoop =>
+            checkHintNonEquiJoin(j.hint)
+            val buildSide = getBroadcastNestedLoopJoinBuildSide(j, conf)
+            Seq(joins.BroadcastNestedLoopJoinExec(
+              planLater(j.left), planLater(j.right), buildSide, LeftAnti, j.condition))
+        }
 
       // If it is not an equi-join, we first look at the join hints w.r.t. the following order:
       //   1. broadcast hint: pick broadcast nested loop join. If both sides have the broadcast
@@ -349,42 +369,12 @@ abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
       //   3. Pick broadcast nested loop join as the final solution. It may OOM but we don't have
       //      other choice. It broadcasts the smaller side for inner and full joins, broadcasts the
       //      left side for right join, and broadcasts right side for left join.
-      case logical.Join(left, right, joinType, condition, hint) =>
+      case j @ logical.Join(left, right, joinType, condition, hint) =>
         checkHintNonEquiJoin(hint)
-        val desiredBuildSide = if (joinType.isInstanceOf[InnerLike] || joinType == FullOuter) {
-          getSmallerSide(left, right)
-        } else {
-          // For perf reasons, `BroadcastNestedLoopJoinExec` prefers to broadcast left side if
-          // it's a right join, and broadcast right side if it's a left join.
-          // TODO: revisit it. If left side is much smaller than the right side, it may be better
-          // to broadcast the left side even if it's a left join.
-          if (canBuildBroadcastLeft(joinType)) BuildLeft else BuildRight
-        }
+        val desiredBuildSide = getBroadcastNestedLoopJoinDesiredBuildSide(j)
 
         def createBroadcastNLJoin(onlyLookingAtHint: Boolean) = {
-          val buildLeft = if (onlyLookingAtHint) {
-            hintToBroadcastLeft(hint)
-          } else {
-            canBroadcastBySize(left, conf) && !hintToNotBroadcastAndReplicateLeft(hint)
-          }
-
-          val buildRight = if (onlyLookingAtHint) {
-            hintToBroadcastRight(hint)
-          } else {
-            canBroadcastBySize(right, conf) && !hintToNotBroadcastAndReplicateRight(hint)
-          }
-
-          val maybeBuildSide = if (buildLeft && buildRight) {
-            Some(desiredBuildSide)
-          } else if (buildLeft) {
-            Some(BuildLeft)
-          } else if (buildRight) {
-            Some(BuildRight)
-          } else {
-            None
-          }
-
-          maybeBuildSide.map { buildSide =>
+          getBroadcastNestedLoopJoinBuildSide(j, onlyLookingAtHint, conf).map { buildSide =>
             Seq(joins.BroadcastNestedLoopJoinExec(
               planLater(left), planLater(right), buildSide, joinType, condition))
           }
@@ -426,24 +416,28 @@ abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
   }
 
   /**
-   * Plans AS-OF joins using a dedicated sort-merge operator when the
-   * conf is enabled.
+   * Plans AS-OF joins using a dedicated sort-merge operator when enabled for the
+   * DataFrame API, or implicitly for SQL ASOF JOIN (`requiresSortMergeAsOfJoin`).
    */
   object AsOfJoinSelection extends Strategy with PredicateHelper {
     def apply(plan: LogicalPlan): Seq[SparkPlan] = plan match {
-      case j @ AsOfJoin(left, right, asOfCondition, condition, joinType,
-          orderExpression, _) if conf.sortMergeAsOfJoinEnabled =>
-        val (leftKeys, rightKeys, residual) = condition match {
-          case Some(cond) => extractEquiJoinKeys(cond, left, right)
+      case j: AsOfJoin if conf.useSortMergeAsOfJoinOperator(j.requiresSortMergeAsOfJoin) =>
+        val (leftKeys, rightKeys, residual) = j.condition match {
+          case Some(cond) => extractEquiJoinKeys(cond, j.left, j.right)
           case None => (Seq.empty[Expression], Seq.empty[Expression], None)
         }
-        val (leftAsOf, rightAsOf) = extractAsOfExprs(
-          asOfCondition, orderExpression, left, right)
+        val (leftSort, rightSort) =
+          if (j.leftSortExprs.nonEmpty && j.rightSortExprs.nonEmpty) {
+            (j.leftSortExprs, j.rightSortExprs)
+          } else {
+            val (leftAsOf, rightAsOf) = extractAsOfExprs(j.orderExpression, j.left, j.right)
+            (Seq(leftAsOf), Seq(rightAsOf))
+          }
 
         joins.SortMergeAsOfJoinExec(
-          leftKeys, rightKeys, leftAsOf, rightAsOf,
-          asOfCondition, orderExpression, joinType, residual,
-          planLater(left), planLater(right)) :: Nil
+          leftKeys, rightKeys, leftSort, rightSort,
+          j.asOfCondition, j.orderExpression, j.joinType, residual,
+          planLater(j.left), planLater(j.right)) :: Nil
       case _ => Nil
     }
 
@@ -493,7 +487,6 @@ abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
      * allowExactMatches variations that complicate asOfCondition's shape.
      */
     private def extractAsOfExprs(
-        asOfCondition: Expression,
         orderExpression: Expression,
         left: LogicalPlan,
         right: LogicalPlan): (Expression, Expression) = {
@@ -564,7 +557,9 @@ abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
       case PhysicalAggregation(
         namedGroupingExpressions, aggregateExpressions, rewrittenResultExpressions, child) =>
 
-        if (aggregateExpressions.exists(_.aggregateFunction.isInstanceOf[PythonUDAF])) {
+        if (aggregateExpressions.exists(ae =>
+            ae.aggregateFunction.isInstanceOf[PythonUDAF] ||
+            ae.aggregateFunction.isInstanceOf[PythonAggregate])) {
           throw new AnalysisException(
             errorClass = "_LEGACY_ERROR_TEMP_3067",
             messageParameters = Map.empty)
@@ -599,12 +594,26 @@ abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
           case None =>
             val stateVersion = conf.getConf(SQLConf.STREAMING_AGGREGATION_STATE_FORMAT_VERSION)
 
-            AggUtils.planStreamingAggregation(
-              normalizedGroupingExpressions,
-              aggregateExpressions,
-              rewrittenResultExpressions,
-              stateVersion,
-              planLater(child))
+            // A Real-Time Mode batch runs until its duration elapses rather than until its input
+            // is exhausted, so an aggregation that only emits once the batch ends would hold every
+            // result back for the whole batch. Plan the streamline operator instead, which merges
+            // each input row against state and emits immediately.
+            if (isRealTimeMode(child) ||
+              conf.getConf(SQLConf.STREAMING_USE_STREAMLINE_AGGREGATOR)) {
+              AggUtils.planStreamlineStreamingAggregation(
+                normalizedGroupingExpressions,
+                aggregateExpressions,
+                rewrittenResultExpressions,
+                stateVersion,
+                planLater(child))
+            } else {
+              AggUtils.planStreamingAggregation(
+                normalizedGroupingExpressions,
+                aggregateExpressions,
+                rewrittenResultExpressions,
+                stateVersion,
+                planLater(child))
+            }
         }
 
       case _ => Nil
@@ -690,7 +699,8 @@ abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
   object Aggregation extends Strategy {
     def apply(plan: LogicalPlan): Seq[SparkPlan] = plan match {
       case PhysicalAggregation(groupingExpressions, aggExpressions, resultExpressions, child)
-        if !aggExpressions.exists(_.aggregateFunction.isInstanceOf[PythonUDAF]) =>
+        if !aggExpressions.exists(ae => ae.aggregateFunction.isInstanceOf[PythonUDAF] ||
+          ae.aggregateFunction.isInstanceOf[PythonAggregate]) =>
         val (functionsWithDistinct, functionsWithoutDistinct) =
           aggExpressions.partition(_.isDistinct)
         val distinctAggChildSets = functionsWithDistinct.map { ae =>
@@ -769,13 +779,40 @@ abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
           resultExpressions,
           planLater(child)))
 
+      case PhysicalAggregation(groupingExpressions, aggExpressions, resultExpressions, child)
+          if aggExpressions.forall(_.aggregateFunction.isInstanceOf[PythonAggregate]) =>
+        // Ideally this should be done in `NormalizeFloatingNumbers`, but we do it here because
+        // `groupingExpressions` is not extracted during logical phase. Without this, 0.0/-0.0 (and
+        // distinct NaN bit patterns) would split one logical group across output rows.
+        val normalizedGroupingExpressions = groupingExpressions.map { e =>
+          NormalizeFloatingNumbers.normalize(e) match {
+            case n: NamedExpression => n
+            // Keep the name of the original expression.
+            case other => Alias(other, e.name)(exprId = e.exprId)
+          }
+        }
+        Seq(execution.python.PythonIncrementalAggregateExec.plan(
+          normalizedGroupingExpressions,
+          aggExpressions,
+          resultExpressions,
+          planLater(child)))
+
       case PhysicalAggregation(_, aggExpressions, _, _) =>
-        val groupAggPandasUDFNames = aggExpressions
-          .map(_.aggregateFunction)
-          .filter(_.isInstanceOf[PythonUDAF])
-          .map(_.asInstanceOf[PythonUDAF].name)
-        // If cannot match the two cases above, then it's an error
-        throw QueryCompilationErrors.invalidPandasUDFPlacementError(groupAggPandasUDFNames.distinct)
+        // Reached when Python aggregate UDFs cannot be planned by the two cases above -- e.g. a
+        // grouped-agg pandas/arrow UDF or an incremental Python aggregator is mixed with other
+        // (SQL or differently-typed Python) aggregate functions in the same Aggregate.
+        val aggFunctions = aggExpressions.map(_.aggregateFunction)
+        val incrementalNames = aggFunctions.collect { case p: PythonAggregate => p.name }
+        val pandasUDFNames = aggFunctions.collect { case p: PythonUDAF => p.name }
+        if (incrementalNames.nonEmpty) {
+          // The message for pandas UDFs is misleading for an Arrow-based incremental aggregator, so
+          // report the dedicated, aggregator-neutral error. Name every offending Python aggregate
+          // function -- both the incremental aggregators and any grouped-agg pandas/arrow UDAFs
+          // mixed in -- so the diagnostic is complete rather than dropping the co-offenders.
+          throw QueryCompilationErrors.invalidPythonAggregatePlacementError(
+            (incrementalNames ++ pandasUDFNames).distinct)
+        }
+        throw QueryCompilationErrors.invalidPandasUDFPlacementError(pandasUDFNames.distinct)
 
       case _ => Nil
     }
@@ -898,6 +935,7 @@ abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
           eventTimeWatermarkForEviction = None,
           planLater(child),
           isStreaming = true,
+          isRealTimeMode = isRealTimeMode(plan),
           hasInitialState,
           initialStateGroupingAttrs,
           initialStateDataAttrs,
@@ -1001,7 +1039,8 @@ abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
       case cmv: CreateMaterializedViewAsSelect =>
         throw QueryCompilationErrors.unsupportedCreatePipelineDatasetQueryExecutionError(
             pipelineDatasetType = "MATERIALIZED VIEW")
-      case cst: CreateStreamingTableAsSelect =>
+      case _: CreateStreamingTableAsSelect | _: CreateStreamingTable |
+          _: CreateStreamingTableAutoCdc =>
         throw QueryCompilationErrors.unsupportedCreatePipelineDatasetQueryExecutionError(
             pipelineDatasetType = "STREAMING TABLE")
       case _ => Nil
@@ -1042,9 +1081,6 @@ abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
         throw SparkException.internalError(
           "Deduplicate operator for non streaming data source should have been replaced " +
             "by aggregate in the optimizer")
-      case _: logical.BinBy =>
-        throw new SparkUnsupportedOperationException("UNSUPPORTED_FEATURE.BIN_BY")
-
       case logical.DeserializeToObject(deserializer, objAttr, child) =>
         execution.DeserializeToObjectExec(deserializer, objAttr, planLater(child)) :: Nil
       case logical.SerializeFromObject(serializer, child) =>
@@ -1079,11 +1115,13 @@ abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
         execution.python.MapInPandasExec(func, output, planLater(child), isBarrier, profile) :: Nil
       case logical.MapInArrow(func, output, child, isBarrier, profile) =>
         execution.python.MapInArrowExec(func, output, planLater(child), isBarrier, profile) :: Nil
+      case logical.ExecuteExternalUDF(udf, resultAttr, child) =>
+        execution.externalUDF.ExecuteExternalUDFExec(
+          udf, resultAttr, planLater(child)) :: Nil
       case logical.MapPartitionsExternalUDF(
-          workerSpec, functionExpr, isBarrier, profile, child) =>
+          functionExpr, isBarrier, profile, child) =>
         execution.externalUDF.MapPartitionsExternalUDFExec(
-          workerSpec, functionExpr,
-          isBarrier, profile, planLater(child)) :: Nil
+          functionExpr, isBarrier, profile, planLater(child)) :: Nil
       case logical.AttachDistributedSequence(attr, child, cache) =>
         execution.python.AttachDistributedSequenceExec(attr, planLater(child), cache) :: Nil
       case logical.PythonWorkerLogs(jsonAttr) =>
@@ -1151,7 +1189,9 @@ abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
       case f: logical.TypedFilter =>
         execution.FilterExec(f.typedCondition(f.deserializer), planLater(f.child)) :: Nil
       case e @ logical.Expand(_, _, child) =>
-        execution.ExpandExec(e.projections, e.output, planLater(child)) :: Nil
+        val useSingleTask = e.getTagValue(
+          datasources.MarkSingleTaskExecution.markTag).getOrElse(false)
+        execution.ExpandExec(e.projections, e.output, planLater(child), useSingleTask) :: Nil
       case logical.Sample(lb, ub, withReplacement, seed, child, sampleMethod) =>
         if (sampleMethod == logical.SampleMethod.System) {
           // V2ScanRelationPushDown is non-excludable and always handles SYSTEM samples
@@ -1161,8 +1201,10 @@ abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
             "TABLESAMPLE SYSTEM node was not properly handled by V2ScanRelationPushDown.")
         }
         execution.SampleExec(lb, ub, withReplacement, seed, planLater(child)) :: Nil
-      case logical.LocalRelation(output, data, _, stream) =>
-        LocalTableScanExec(output, data, stream) :: Nil
+      case r @ logical.LocalRelation(output, data, _, stream) =>
+        val useSingleTask = r.getTagValue(
+          datasources.MarkSingleTaskExecution.markTag).getOrElse(false)
+        LocalTableScanExec(output, data, stream, useSingleTask) :: Nil
       case logical.EmptyRelation(l) => EmptyRelationExec(l) :: Nil
       case CommandResult(output, _, plan, data) => CommandResultExec(output, plan, data) :: Nil
       // We should match the combination of limit and offset first, to get the optimal physical
@@ -1229,6 +1271,17 @@ abstract class SparkStrategies extends QueryPlanner[SparkPlan] {
           staticPartitions) :: Nil
       case MultiResult(children) =>
         MultiResultExec(children.map(planLater)) :: Nil
+      case b: logical.BinBy =>
+        execution.BinByExec(
+          binWidthMicros = b.binWidthMicros,
+          originMicros = b.originMicros,
+          rangeStart = b.rangeStart,
+          rangeEnd = b.rangeEnd,
+          distributeColumns = b.distributeColumns,
+          scaledDistributeColumns = b.scaledDistributeColumns,
+          appendedAttributes = b.appendedAttributes,
+          timeZoneId = b.timeZoneId,
+          child = planLater(b.child)) :: Nil
       case _ => Nil
     }
   }

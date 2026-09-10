@@ -26,6 +26,7 @@ import org.apache.spark.sql.{AnalysisException, QueryTest, Row}
 import org.apache.spark.sql.catalyst.ExtendedAnalysisException
 import org.apache.spark.sql.catalyst.analysis.ResolvedIdentifier
 import org.apache.spark.sql.catalyst.expressions._
+import org.apache.spark.sql.catalyst.plans.logical.Filter
 import org.apache.spark.sql.catalyst.util.CollationFactory
 import org.apache.spark.sql.connector.{DatasourceV2SQLBase, FakeV2ProviderWithCustomSchema}
 import org.apache.spark.sql.connector.catalog.{CatalogV2Util, Identifier, InMemoryTable}
@@ -40,7 +41,9 @@ import org.apache.spark.sql.execution.joins._
 import org.apache.spark.sql.functions.col
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types.{ArrayType, IntegerType, MapType, Metadata, MetadataBuilder, StringType, StructField, StructType}
+import org.apache.spark.tags.ExtendedSQLTest
 
+@ExtendedSQLTest
 class CollationSuite extends DatasourceV2SQLBase with AdaptiveSparkPlanHelper {
   protected val v2Source = classOf[FakeV2ProviderWithCustomSchema].getName
 
@@ -49,6 +52,9 @@ class CollationSuite extends DatasourceV2SQLBase with AdaptiveSparkPlanHelper {
   private val allFileBasedDataSources = collationPreservingSources ++  collationNonPreservingSources
   private val fullyQualifiedPrefix = s"${CollationFactory.CATALOG}.${CollationFactory.SCHEMA}."
   private val collations = Seq("UTF8_BINARY", "UTF8_LCASE", "UNICODE", "UNICODE_CI")
+
+  override protected def sparkConf =
+    super.sparkConf.set(SQLConf.ADAPTIVE_MAX_SHUFFLE_HASH_JOIN_LOCAL_MAP_THRESHOLD.key, "0")
 
   @inline
   private def isSortMergeForced: Boolean = {
@@ -449,7 +455,7 @@ class CollationSuite extends DatasourceV2SQLBase with AdaptiveSparkPlanHelper {
     }
   }
 
-  test("hash agg is not used for non binary collations") {
+  test("hash agg is used for binary and non-binary collations") {
     val tableNameNonBinary = "T_NON_BINARY"
     val tableNameBinary = "T_BINARY"
     withTable(tableNameNonBinary) {
@@ -462,7 +468,7 @@ class CollationSuite extends DatasourceV2SQLBase with AdaptiveSparkPlanHelper {
         val dfNonBinary = sql(s"SELECT COUNT(*), c FROM $tableNameNonBinary GROUP BY c")
         assert(collectFirst(dfNonBinary.queryExecution.executedPlan) {
           case _: HashAggregateExec | _: ObjectHashAggregateExec => ()
-        }.isEmpty)
+        }.nonEmpty)
 
         val dfBinary = sql(s"SELECT COUNT(*), c FROM $tableNameBinary GROUP BY c")
         assert(collectFirst(dfBinary.queryExecution.executedPlan) {
@@ -2434,6 +2440,35 @@ class CollationSuite extends DatasourceV2SQLBase with AdaptiveSparkPlanHelper {
         sql("SELECT * FROM t1 WHERE 'hello' <=> c AND c <=> 'HELLO' COLLATE UNICODE"),
         Row("HELLO")
       )
+    }
+  }
+
+  test("SPARK-57727: constraint inference does not substitute non-binary-stable attributes") {
+    withTable("t1") {
+      sql("CREATE TABLE t1 (a STRING COLLATE UTF8_LCASE, b STRING COLLATE UTF8_LCASE)")
+      sql("INSERT INTO t1 VALUES ('hello', 'HELLO')")
+
+      checkAnswer(
+        sql("SELECT a, b FROM t1 WHERE a = b AND a = 'hello' COLLATE UTF8_BINARY"),
+        Row("hello", "HELLO")
+      )
+    }
+  }
+
+  test("SPARK-57727: same-collation constraint inference is preserved") {
+    withTable("t1") {
+      sql("CREATE TABLE t1 (a STRING COLLATE UTF8_LCASE, b STRING COLLATE UTF8_LCASE)")
+
+      val optimized =
+        sql("SELECT a, b FROM t1 WHERE a = b AND a = 'hello'").queryExecution.optimizedPlan
+      val inferredOnB = optimized.exists {
+        case Filter(cond, _) => cond.exists {
+          case e: EqualTo => e.references.exists(_.name == "b") && e.toString.contains("hello")
+          case _ => false
+        }
+        case _ => false
+      }
+      assert(inferredOnB, s"expected inferred 'b = hello' filter to be preserved:\n$optimized")
     }
   }
 

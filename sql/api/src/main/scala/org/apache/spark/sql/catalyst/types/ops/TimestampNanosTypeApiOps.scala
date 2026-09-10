@@ -19,6 +19,10 @@ package org.apache.spark.sql.catalyst.types.ops
 
 import java.time.{Instant, LocalDateTime, ZoneId, ZoneOffset}
 
+import org.apache.arrow.vector.types.TimeUnit
+import org.apache.arrow.vector.types.pojo.ArrowType
+
+import org.apache.spark.SparkException
 import org.apache.spark.sql.catalyst.encoders.AgnosticEncoder
 import org.apache.spark.sql.catalyst.encoders.AgnosticEncoders.{InstantNanosEncoder, LocalDateTimeNanosEncoder}
 import org.apache.spark.sql.catalyst.util.TimestampFormatter
@@ -74,6 +78,34 @@ abstract class TimestampNanosTypeApiOps extends TypeApiOps with DataTypeErrorsBa
   // column to STRING_TYPE for consistency, mirroring the reference TimeType ops.
   override def thriftTypeName: Option[String] = Some("STRING_TYPE")
 
+  // ==================== Python Interop ====================
+
+  // The external Python value is `datetime.datetime`, which is microsecond-resolution, so PySpark
+  // represents these types as epoch microseconds (TimestampNTZNanosType / TimestampLTZNanosType in
+  // pyspark/sql/types.py) and sub-microsecond digits never cross the Py4J boundary in either
+  // direction. That is the documented Python/UDF microsecond-only limitation (SPARK-57808).
+  // Lossless Arrow/pandas value conversion for these types (toPandas) is a pending PySpark
+  // follow-up, so it is not yet an alternative that preserves the extra digits.
+  override def needConversionInPython: Option[Boolean] = Some(true)
+
+  // Python hands us epoch microseconds; rebuild the internal value with a zero sub-microsecond
+  // remainder. The reverse direction is EvaluatePython.toJava, which yields `epochMicros`.
+  //
+  // The gate is enforced eagerly, when the converter is built, so that the classic PySpark
+  // explicit-schema path (SparkSession.applySchemaToPythonRDD, which calls
+  // EvaluatePython.makeFromJava rather than the guarded getEncoder) and Python UDF nanosecond
+  // return types cannot execute with spark.sql.timestampNanosTypes.enabled = false. Mirrors the
+  // guard on getEncoder below.
+  override def makeFromJava: Option[Any => Any] = {
+    DataTypeErrors.checkTimestampNanosTypesEnabled()
+    Some((obj: Any) =>
+      nullSafeConvert(obj) {
+        case c: Long => TimestampNanosVal.fromParts(c, 0.toShort)
+        // Py4J serializes values between MIN_INT and MAX_INT as Ints, not Longs
+        case c: Int => TimestampNanosVal.fromParts(c.toLong, 0.toShort)
+      })
+  }
+
   // ==================== Row Encoding ====================
 
   // Honor the spark.sql.timestampNanosTypes.enabled gate just like the legacy
@@ -116,6 +148,12 @@ class TimestampNTZNanosTypeApiOps(val t: TimestampNTZNanosType) extends Timestam
   // Mirrors RowEncoder.encoderForDataTypeDefault for TimestampNTZNanosType (SPARK-57033):
   // maps to java.time.LocalDateTime with the column precision.
   override protected def nanosEncoder: AgnosticEncoder[_] = LocalDateTimeNanosEncoder(t.precision)
+
+  // NTZ is zone-less: like TimestampNTZType, the Arrow timestamp carries a null time zone. The
+  // column precision is not expressible in the Arrow type itself and is carried in the Arrow
+  // field metadata instead (see ArrowUtils).
+  override def toArrowType(timeZoneId: String): Option[ArrowType] =
+    Some(new ArrowType.Timestamp(TimeUnit.NANOSECOND, null))
 }
 
 /**
@@ -154,4 +192,14 @@ class TimestampLTZNanosTypeApiOps(val t: TimestampLTZNanosType, zoneId: => ZoneI
   // Mirrors RowEncoder.encoderForDataTypeDefault for TimestampLTZNanosType (SPARK-57033):
   // maps to java.time.Instant with the column precision.
   override protected def nanosEncoder: AgnosticEncoder[_] = InstantNanosEncoder(t.precision)
+
+  // LTZ is zone-aware: like TimestampType, the Arrow timestamp carries the session time zone, so
+  // a non-null timeZoneId is mandatory (mirrors ArrowUtils.toArrowTypeDefault for TimestampType).
+  // The column precision is carried in the Arrow field metadata instead (see ArrowUtils).
+  override def toArrowType(timeZoneId: String): Option[ArrowType] = {
+    if (timeZoneId == null) {
+      throw SparkException.internalError("Missing timezoneId where it is mandatory.")
+    }
+    Some(new ArrowType.Timestamp(TimeUnit.NANOSECOND, timeZoneId))
+  }
 }

@@ -46,7 +46,7 @@ import org.apache.spark.sql.execution.datasources.parquet.types.ops.ParquetTypeO
 import org.apache.spark.sql.execution.datasources.v2.V2ColumnUtils
 import org.apache.spark.sql.internal.{LegacyBehaviorPolicy, SQLConf}
 import org.apache.spark.sql.internal.SQLConf.PARQUET_AGGREGATE_PUSHDOWN_ENABLED
-import org.apache.spark.sql.types.{ArrayType, AtomicType, DataType, MapType, NullType, StructField, StructType, TimestampLTZNanosType, TimestampNTZNanosType, UserDefinedType, VariantType}
+import org.apache.spark.sql.types.{ArrayType, AtomicType, DataType, MapType, NullType, StructField, StructType, UserDefinedType, VariantType}
 import org.apache.spark.util.ArrayImplicits._
 
 object ParquetUtils extends Logging {
@@ -144,7 +144,10 @@ object ParquetUtils extends Logging {
     val leaves = allFiles.toArray.sortBy(_.getPath.toString)
 
     FileTypes(
-      data = leaves.filterNot(f => isSummaryFile(f.getPath)).toImmutableArraySeq,
+      // Zero-length files (e.g. `_SUCCESS` markers surfaced by a relaxed `ignoredPathSegmentRegex`)
+      // cannot contain a Parquet footer, so exclude them from schema inference candidates.
+      data = leaves.filter(_.getLen > 0).filterNot(f => isSummaryFile(f.getPath))
+        .toImmutableArraySeq,
       metadata =
         leaves.filter(_.getPath.getName == ParquetFileWriter.PARQUET_METADATA_FILE)
           .toImmutableArraySeq,
@@ -213,8 +216,6 @@ object ParquetUtils extends Logging {
       .getOrElse(isBatchReadSupportedDefault(sqlConf, dt))
 
   private def isBatchReadSupportedDefault(sqlConf: SQLConf, dt: DataType): Boolean = dt match {
-    case _: TimestampNTZNanosType | _: TimestampLTZNanosType =>
-      false
     case _: AtomicType =>
       true
     case _: NullType =>
@@ -343,7 +344,7 @@ object ParquetUtils extends Logging {
         agg match {
           case max: Max if V2ColumnUtils.extractV2Column(max.column).isDefined =>
             val colName = V2ColumnUtils.extractV2Column(max.column).get
-            index = dataSchema.fieldNames.toList.indexOf(colName)
+            index = dataSchema.getFieldIndex(colName).getOrElse(-1)
             schemaName = "max(" + colName + ")"
             val currentMax = getCurrentBlockMaxOrMin(filePath, blockMetaData, index, true)
             if (value == None || currentMax.asInstanceOf[Comparable[Any]].compareTo(value) > 0) {
@@ -351,7 +352,7 @@ object ParquetUtils extends Logging {
             }
           case min: Min if V2ColumnUtils.extractV2Column(min.column).isDefined =>
             val colName = V2ColumnUtils.extractV2Column(min.column).get
-            index = dataSchema.fieldNames.toList.indexOf(colName)
+            index = dataSchema.getFieldIndex(colName).getOrElse(-1)
             schemaName = "min(" + colName + ")"
             val currentMin = getCurrentBlockMaxOrMin(filePath, blockMetaData, index, false)
             if (value == None || currentMin.asInstanceOf[Comparable[Any]].compareTo(value) < 0) {
@@ -362,12 +363,12 @@ object ParquetUtils extends Logging {
             schemaName = "count(" + colName + ")"
             rowCount += block.getRowCount
             var isPartitionCol = false
-            if (partitionSchema.fields.map(_.name).toSet.contains(colName)) {
+            if (partitionSchema.getFieldIndex(colName).isDefined) {
               isPartitionCol = true
             }
             isCount = true
             if (!isPartitionCol) {
-              index = dataSchema.fieldNames.toList.indexOf(colName)
+              index = dataSchema.getFieldIndex(colName).getOrElse(-1)
               // Count(*) includes the null values, but Count(colName) doesn't.
               rowCount -= getNumNulls(filePath, blockMetaData, index)
             }
@@ -406,7 +407,7 @@ object ParquetUtils extends Logging {
     val statistics = columnChunkMetaData.get(i).getStatistics
     if (!statistics.hasNonNullValue) {
       throw new SparkUnsupportedOperationException(
-        errorClass = "_LEGACY_ERROR_TEMP_3172",
+        errorClass = "PARQUET_AGGREGATE_PUSH_DOWN_UNSUPPORTED.NO_MIN_MAX",
         messageParameters = Map(
           "filePath" -> filePath,
           "config" -> PARQUET_AGGREGATE_PUSHDOWN_ENABLED.key))
@@ -422,12 +423,12 @@ object ParquetUtils extends Logging {
     val statistics = columnChunkMetaData.get(i).getStatistics
     if (!statistics.isNumNullsSet) {
       throw new SparkUnsupportedOperationException(
-        errorClass = "_LEGACY_ERROR_TEMP_3171",
+        errorClass = "PARQUET_AGGREGATE_PUSH_DOWN_UNSUPPORTED.NO_NUM_NULLS",
         messageParameters = Map(
           "filePath" -> filePath,
           "config" -> PARQUET_AGGREGATE_PUSHDOWN_ENABLED.key))
     }
-    statistics.getNumNulls;
+    statistics.getNumNulls
   }
 
   // Replaces each VariantType in the schema with the corresponding type in the shredding schema.

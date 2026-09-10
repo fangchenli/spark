@@ -39,7 +39,7 @@ import org.apache.spark.sql.catalyst.types.DataTypeUtils
 import org.apache.spark.sql.catalyst.util.{escapeSingleQuotedString, quoteIfNeeded, CaseInsensitiveMap, CharVarcharUtils, DateTimeUtils, ResolveDefaultColumns}
 import org.apache.spark.sql.catalyst.util.ResolveDefaultColumns.CURRENT_DEFAULT_COLUMN_METADATA_KEY
 import org.apache.spark.sql.classic.ClassicConversions.castToImpl
-import org.apache.spark.sql.connector.catalog.{TableCatalog, V1Table, V1ViewInfo}
+import org.apache.spark.sql.connector.catalog.{TableCatalog, V1Table, V1View}
 import org.apache.spark.sql.connector.catalog.CatalogV2Implicits.TableIdentifierHelper
 import org.apache.spark.sql.errors.{QueryCompilationErrors, QueryExecutionErrors}
 import org.apache.spark.sql.execution.CommandExecutionMode
@@ -590,9 +590,9 @@ object ResolvedChildHelper {
     val catalog = sparkSession.sessionState.catalog
     child match {
       case ResolvedTempView(_, metadata) => metadata
-      // v1 inspection commands always see a v1 (`V1ViewInfo`) view here -- the v2 strategy
+      // v1 inspection commands always see a v1 (`V1View`) view here -- the v2 strategy
       // handles non-session views before this method is reached.
-      case ResolvedPersistentView(_, _, info: V1ViewInfo) => info.v1Table
+      case ResolvedPersistentView(_, _, info: V1View) => info.v1Table
       case ResolvedTable(_, _, t: V1Table, _) => t.v1Table
       case _ if (catalog.isTempView(table)) =>
           catalog.getTempViewOrPermanentTableMetadata(table)
@@ -654,15 +654,16 @@ case class DescribeTableCommand(
       }
       describeSchema(metadata.schema, result, header = false)
     } else {
-      if (metadata.schema.isEmpty) {
+      val schema = if (metadata.schema.isEmpty) {
         // In older version(prior to 2.1) of Spark, the table schema can be empty and should be
         // inferred at runtime. We should still support it.
-        describeSchema(sparkSession.table(metadata.identifier).schema, result, header = false)
+        sparkSession.table(metadata.identifier).schema
       } else {
-        describeSchema(metadata.schema, result, header = false)
+        metadata.schema
       }
+      describeSchema(schema, result, header = false)
 
-      describePartitionInfo(metadata, result)
+      describePartitionInfo(metadata, schema, result)
       describeClusteringInfo(metadata, result)
 
       if (partitionSpec.nonEmpty) {
@@ -682,10 +683,29 @@ case class DescribeTableCommand(
     result.toSeq
   }
 
-  private def describePartitionInfo(table: CatalogTable, buffer: ArrayBuffer[Row]): Unit = {
-    if (table.partitionColumnNames.nonEmpty) {
-      append(buffer, "# Partition Information", "", "")
-      describeSchema(table.partitionSchema, buffer, header = true)
+  private def describePartitionInfo(
+      table: CatalogTable,
+      schema: StructType,
+      buffer: ArrayBuffer[Row]): Unit = {
+    val partitionColumnNames = table.partitionColumnNames
+    if (partitionColumnNames.nonEmpty) {
+      // Same positional convention as `CatalogTable.partitionSchema`, but reported instead of
+      // asserted so that a table with inconsistent metadata stays describable.
+      val partitionFields = schema.takeRight(partitionColumnNames.length)
+      val consistent = partitionFields.length == partitionColumnNames.length &&
+        partitionFields.map(_.name).zip(partitionColumnNames).forall {
+          case (schemaColumn, partitionColumn) => conf.resolver(schemaColumn, partitionColumn)
+        }
+      if (consistent) {
+        append(buffer, "# Partition Information", "", "")
+        describeSchema(StructType(partitionFields), buffer, header = true)
+      } else {
+        append(buffer, "# Invalid Partition Information", "", "")
+        append(buffer, "Declared Partition Columns",
+          partitionColumnNames.mkString("[", ", ", "]"), "")
+        append(buffer, "Last Columns in Table Schema",
+          partitionFields.map(_.name).mkString("[", ", ", "]"), "")
+      }
     }
   }
 

@@ -22,6 +22,7 @@ import java.util.concurrent.TimeUnit
 import org.apache.spark.deploy.k8s.Constants._
 import org.apache.spark.internal.Logging
 import org.apache.spark.internal.config.{ConfigBindingPolicy, ConfigBuilder, DYN_ALLOCATION_ENABLED}
+import org.apache.spark.network.util.ByteUnit
 
 private[spark] object Config extends Logging {
 
@@ -87,6 +88,18 @@ private[spark] object Config extends Logging {
       .stringConf
       .checkValues(Set("IPv4", "IPv6", "IPv4,IPv6", "IPv6,IPv4"))
       .createWithDefault("IPv4")
+
+  val KUBERNETES_DRIVER_SERVICE_PUBLISH_NOT_READY_ADDRESSES =
+    ConfigBuilder("spark.kubernetes.driver.service.publishNotReadyAddresses")
+      .doc("If true, the driver service publishes DNS records for the driver pod even " +
+        "while the pod is not ready, so executors can resolve the driver service " +
+        "during startup when a readiness probe is configured on the driver pod. " +
+        "When enabled, the driver pod readiness wait before executor allocation " +
+        "is skipped as well.")
+      .version("4.3.0")
+      .withBindingPolicy(ConfigBindingPolicy.NOT_APPLICABLE)
+      .booleanConf
+      .createWithDefault(false)
 
   val KUBERNETES_DRIVER_OWN_PVC =
     ConfigBuilder("spark.kubernetes.driver.ownPersistentVolumeClaim")
@@ -294,6 +307,15 @@ private[spark] object Config extends Logging {
       .checkValue(v => 0 < v && v <= 1, "The factor should be in (0, 1]")
       .createWithDefault(0.1)
 
+  val EXECUTOR_RESIZE_MAX_MEMORY =
+    ConfigBuilder("spark.kubernetes.executor.resizeMaxMemory")
+      .doc("The upper bound of the executor container memory limit that the resize plugin " +
+        "can grow to. By default, it is Long.MaxValue, which means no upper bound.")
+      .version("4.4.0")
+      .bytesConf(ByteUnit.BYTE)
+      .checkValue(_ > 0, "The maximum memory should be positive")
+      .createWithDefault(Long.MaxValue)
+
   val PVC_RESIZE_INTERVAL =
     ConfigBuilder("spark.kubernetes.executor.pvc.resizeInterval")
       .doc("Interval between executor PVC resize operations, in minutes. " +
@@ -320,6 +342,15 @@ private[spark] object Config extends Logging {
       .doubleConf
       .checkValue(v => 0 < v && v <= 1, "The factor should be in (0, 1]")
       .createWithDefault(1.0)
+
+  val PVC_RESIZE_MAX_STORAGE =
+    ConfigBuilder("spark.kubernetes.executor.pvc.resizeMaxStorage")
+      .doc("The upper bound of the PVC storage request that the resize plugin can grow to. " +
+        "By default, it is Long.MaxValue, which means no upper bound.")
+      .version("4.4.0")
+      .bytesConf(ByteUnit.BYTE)
+      .checkValue(_ > 0, "The maximum storage should be positive")
+      .createWithDefault(Long.MaxValue)
 
   val KUBERNETES_AUTH_DRIVER_CONF_PREFIX = "spark.kubernetes.authenticate.driver"
   val KUBERNETES_AUTH_EXECUTOR_CONF_PREFIX = "spark.kubernetes.authenticate.executor"
@@ -586,7 +617,10 @@ private[spark] object Config extends Logging {
         "allocate the recovery-mode executors which accept only a single task per executor JVM. " +
         "In other words, the recovery-mode executors replace the OOM-terminated executors to " +
         "survive from the resource-hungry tasks for the remaining tasks and stages. " +
-        "If set to `false`, Spark will not use the recovery-mode executors.")
+        "If set to `false`, Spark will not use the recovery-mode executors. " +
+        "Note that when spark.task.cpus is 0.5 or less, a recovery-mode executor announces a " +
+        "single CPU core and therefore accepts floor(1 / spark.task.cpus) concurrent tasks " +
+        "instead of only one.")
       .version("4.2.0")
       .booleanConf
       .createOptional
