@@ -290,6 +290,7 @@ class PandasToArrowConversionTests(unittest.TestCase):
         """ArrowDtype timestamps must be UTC normalized like numpy ones."""
         import pandas as pd
         import pyarrow as pa
+        import pyarrow.compute as pc
 
         from pyspark.sql.pandas.types import _check_series_convert_timestamps_internal
 
@@ -313,6 +314,21 @@ class PandasToArrowConversionTests(unittest.TestCase):
             pd.Series(ambiguous, dtype="datetime64[ns]"), ny
         )
         self.assertEqual(str(arrow_amb.iloc[0]), str(numpy_amb.iloc[0]))
+
+        # A tz-aware column carries its own zone and must not be re-localized with the
+        # session timezone.
+        ny = "America/New_York"
+        # assume_timezone reads the naive values as New York wall clock; pa.array with a
+        # tz-aware type would read them as UTC instants instead.
+        aware_arrow = pc.assume_timezone(pa.array(values, type=pa.timestamp("us")), ny).to_pandas(
+            types_mapper=pd.ArrowDtype
+        )
+        aware_numpy = pd.Series(values, dtype="datetime64[ns]").dt.tz_localize(ny)
+        aware_arrow_out = _check_series_convert_timestamps_internal(aware_arrow, tz)
+        aware_numpy_out = _check_series_convert_timestamps_internal(aware_numpy, tz)
+        self.assertEqual(str(aware_arrow_out.iloc[0]), str(aware_numpy_out.iloc[0]))
+        self.assertEqual(str(aware_arrow_out.iloc[0]), "2020-01-01 17:00:00+00:00")
+        self.assertTrue(pd.isna(aware_arrow_out.iloc[1]))
 
         # Zone ids pyarrow rejects but pandas accepts must still match the numpy branch.
         for tz in ("UTC+01:00", "+01:00:30"):
