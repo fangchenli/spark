@@ -744,6 +744,7 @@ def _check_series_convert_timestamps_internal(
     import pyarrow.compute as pc
     from pandas.api.types import is_datetime64_dtype
 
+    # TODO: handle nested timestamps, such as ArrayType(TimestampType())?
     if is_datetime64_dtype(s.dtype):
         # When tz_localize a tz-naive timestamp, the result is ambiguous if the tz-naive
         # timestamp is during the hour when the clock is adjusted backward during due to
