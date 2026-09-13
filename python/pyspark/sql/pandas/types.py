@@ -744,7 +744,6 @@ def _check_series_convert_timestamps_internal(
     import pyarrow.compute as pc
     from pandas.api.types import is_datetime64_dtype
 
-    # TODO: handle nested timestamps, such as ArrayType(TimestampType())?
     if is_datetime64_dtype(s.dtype):
         # When tz_localize a tz-naive timestamp, the result is ambiguous if the tz-naive
         # timestamp is during the hour when the clock is adjusted backward during due to
@@ -783,16 +782,16 @@ def _check_series_convert_timestamps_internal(
     elif isinstance(s.dtype, pd.ArrowDtype) and pa.types.is_timestamp(s.dtype.pyarrow_dtype):
         if s.dtype.pyarrow_dtype.tz is not None:
             return s.dt.tz_convert("UTC")
-        unit = s.dtype.pyarrow_dtype.unit
-        if timezone is None:
-            # pyarrow cannot resolve the local-timezone fallback; use the numpy branch.
-            return _check_series_convert_timestamps_internal(s.astype(f"datetime64[{unit}]"), None)
+        tz = timezone or _get_local_timezone()
         try:
             # ArrowDtype.tz_localize rejects ambiguous=False, so use assume_timezone.
             # "latest" picks standard time, matching the tz-naive branch above.
-            localized = pc.assume_timezone(pa.array(s), timezone, ambiguous="latest")
+            localized = pc.assume_timezone(pa.array(s), tz, ambiguous="latest")
         except pa.lib.ArrowInvalid:
-            # pyarrow rejects some zone ids pandas accepts, e.g. "UTC+01:00".
+            # pyarrow rejects some zone ids pandas accepts (e.g. "UTC+01:00", the local
+            # timezone fallback). Nonexistent times land here too and then raise the
+            # same pandas error as the numpy branch.
+            unit = s.dtype.pyarrow_dtype.unit
             return _check_series_convert_timestamps_internal(
                 s.astype(f"datetime64[{unit}]"), timezone
             )
