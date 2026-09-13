@@ -270,6 +270,64 @@ class ArrowBatchTransformerTests(unittest.TestCase):
 @unittest.skipIf(not have_pyarrow, pyarrow_requirement_message)
 @unittest.skipIf(not have_pandas, pandas_requirement_message)
 class PandasToArrowConversionTests(unittest.TestCase):
+    def test_arrow_dtype_timestamp_normalization_applies_outside_udfs(self):
+        """The ArrowDtype branch also serves createDataFrame, not just Pandas UDFs.
+
+        Previously such a column was left naive and read as UTC; it is now read as
+        the session timezone, matching numpy-backed columns.
+        """
+        import pandas as pd
+        import pyarrow as pa
+
+        tz = "America/Los_Angeles"
+        values = [datetime.datetime(2020, 1, 1, 12, 0)]
+        arrow_ser = pa.array(values, type=pa.timestamp("us")).to_pandas(types_mapper=pd.ArrowDtype)
+        numpy_ser = pd.Series(values, dtype="datetime64[ns]")
+
+        schema = StructType([StructField("_0", TimestampType())])
+        arrow_batch = PandasToArrowConversion.convert([arrow_ser], schema, timezone=tz)
+        numpy_batch = PandasToArrowConversion.convert([numpy_ser], schema, timezone=tz)
+        self.assertEqual(arrow_batch.column(0).to_pylist(), numpy_batch.column(0).to_pylist())
+
+    def test_arrow_dtype_timestamps_are_utc_normalized(self):
+        """ArrowDtype timestamps must be UTC normalized like numpy ones."""
+        import pandas as pd
+        import pyarrow as pa
+        from pyspark.sql.pandas.types import _check_series_convert_timestamps_internal
+
+        tz = "America/Los_Angeles"
+        values = [datetime.datetime(2020, 1, 1, 12, 0), None]
+        arrow_ser = pa.array(values, type=pa.timestamp("us")).to_pandas(types_mapper=pd.ArrowDtype)
+        numpy_ser = pd.Series(values, dtype="datetime64[ns]")
+
+        arrow_out = _check_series_convert_timestamps_internal(arrow_ser, tz)
+        numpy_out = _check_series_convert_timestamps_internal(numpy_ser, tz)
+        self.assertEqual(str(arrow_out.iloc[0]), str(numpy_out.iloc[0]))
+        self.assertTrue(pd.isna(arrow_out.iloc[1]))
+
+        # DST-ambiguous timestamps resolve to standard time, as on the numpy path.
+        ny = "America/New_York"
+        ambiguous = [datetime.datetime(2015, 11, 1, 1, 30)]
+        arrow_amb = _check_series_convert_timestamps_internal(
+            pa.array(ambiguous, type=pa.timestamp("us")).to_pandas(types_mapper=pd.ArrowDtype), ny
+        )
+        numpy_amb = _check_series_convert_timestamps_internal(
+            pd.Series(ambiguous, dtype="datetime64[ns]"), ny
+        )
+        self.assertEqual(str(arrow_amb.iloc[0]), str(numpy_amb.iloc[0]))
+
+        # Zone ids pyarrow rejects but pandas accepts must still match the numpy branch.
+        for tz in ("UTC+01:00", "+01:00:30"):
+            arrow_out = _check_series_convert_timestamps_internal(arrow_ser, tz)
+            numpy_out = _check_series_convert_timestamps_internal(numpy_ser, tz)
+            self.assertEqual(str(arrow_out.iloc[0]), str(numpy_out.iloc[0]), f"Failed for {tz}")
+
+        # timezone=None falls back to the local timezone without going through pyarrow.
+        self.assertEqual(
+            str(_check_series_convert_timestamps_internal(arrow_ser, None).dtype),
+            "datetime64[us, UTC]",
+        )
+
     def test_convert(self):
         """Test basic DataFrame/Series to Arrow RecordBatch conversion."""
         import pandas as pd

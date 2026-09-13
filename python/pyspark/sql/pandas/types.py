@@ -740,6 +740,8 @@ def _check_series_convert_timestamps_internal(
     require_minimum_pandas_version()
 
     import pandas as pd
+    import pyarrow as pa
+    import pyarrow.compute as pc
     from pandas.api.types import is_datetime64_dtype
 
     # TODO: handle nested timestamps, such as ArrayType(TimestampType())?
@@ -778,6 +780,25 @@ def _check_series_convert_timestamps_internal(
         return s.dt.tz_localize(tz, ambiguous=False).dt.tz_convert("UTC")
     elif isinstance(s.dtype, pd.DatetimeTZDtype):
         return s.dt.tz_convert("UTC")
+    elif isinstance(s.dtype, pd.ArrowDtype) and pa.types.is_timestamp(s.dtype.pyarrow_dtype):
+        if s.dtype.pyarrow_dtype.tz is not None:
+            return s.dt.tz_convert("UTC")
+        unit = s.dtype.pyarrow_dtype.unit
+        if timezone is None:
+            # pyarrow cannot resolve the local-timezone fallback; use the numpy branch.
+            return _check_series_convert_timestamps_internal(s.astype(f"datetime64[{unit}]"), None)
+        try:
+            # ArrowDtype.tz_localize rejects ambiguous=False, so use assume_timezone.
+            # "latest" picks standard time, matching the tz-naive branch above.
+            localized = pc.assume_timezone(pa.array(s), timezone, ambiguous="latest")
+        except pa.lib.ArrowInvalid:
+            # pyarrow rejects some zone ids pandas accepts, e.g. "UTC+01:00".
+            return _check_series_convert_timestamps_internal(
+                s.astype(f"datetime64[{unit}]"), timezone
+            )
+        return pd.Series(
+            pd.arrays.ArrowExtensionArray(localized), index=s.index, name=s.name
+        ).dt.tz_convert("UTC")
     else:
         return s
 
