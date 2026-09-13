@@ -785,13 +785,10 @@ def _check_series_convert_timestamps_internal(
             return s.dt.tz_convert("UTC")
         tz = timezone or _get_local_timezone()
         try:
-            # ArrowDtype.tz_localize rejects ambiguous=False, so use assume_timezone.
-            # "latest" picks standard time, matching the tz-naive branch above.
+            # ArrowDtype.tz_localize lacks ambiguous=False; "latest" matches the numpy branch.
             localized = pc.assume_timezone(pa.array(s), tz, ambiguous="latest")
         except pa.lib.ArrowInvalid:
-            # pyarrow rejects some zone ids pandas accepts (e.g. "UTC+01:00", the local
-            # timezone fallback). Nonexistent times land here too and then raise the
-            # same pandas error as the numpy branch.
+            # Unparseable zone ids (e.g. "UTC+01:00") and nonexistent times use the numpy branch.
             unit = s.dtype.pyarrow_dtype.unit
             return _check_series_convert_timestamps_internal(
                 s.astype(f"datetime64[{unit}]"), timezone

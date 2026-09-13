@@ -271,7 +271,7 @@ class ArrowBatchTransformerTests(unittest.TestCase):
 @unittest.skipIf(not have_pandas, pandas_requirement_message)
 class PandasToArrowConversionTests(unittest.TestCase):
     def test_arrow_dtype_timestamp_normalization_in_create_dataframe_path(self):
-        """createDataFrame converts through create_arrow_array_from_pandas, not the UDF path."""
+        """Covers the createDataFrame path (create_arrow_array_from_pandas)."""
         import pandas as pd
         import pyarrow as pa
 
@@ -304,7 +304,7 @@ class PandasToArrowConversionTests(unittest.TestCase):
         self.assertEqual(str(arrow_out.iloc[0]), str(numpy_out.iloc[0]))
         self.assertTrue(pd.isna(arrow_out.iloc[1]))
 
-        # DST-ambiguous timestamps resolve to standard time, as on the numpy path.
+        # DST-ambiguous values resolve to standard time, like numpy.
         ny = "America/New_York"
         ambiguous = [datetime.datetime(2015, 11, 1, 1, 30)]
         arrow_amb = _check_series_convert_timestamps_internal(
@@ -315,11 +315,9 @@ class PandasToArrowConversionTests(unittest.TestCase):
         )
         self.assertEqual(str(arrow_amb.iloc[0]), str(numpy_amb.iloc[0]))
 
-        # A tz-aware column carries its own zone and must not be re-localized with the
-        # session timezone.
+        # A tz-aware column must not be re-localized with the session timezone.
         ny = "America/New_York"
-        # assume_timezone reads the naive values as New York wall clock; pa.array with a
-        # tz-aware type would read them as UTC instants instead.
+        # assume_timezone reads naive values as wall clock; pa.array with a tz would read UTC.
         aware_arrow = pc.assume_timezone(pa.array(values, type=pa.timestamp("us")), ny).to_pandas(
             types_mapper=pd.ArrowDtype
         )
@@ -330,13 +328,13 @@ class PandasToArrowConversionTests(unittest.TestCase):
         self.assertEqual(str(aware_arrow_out.iloc[0]), "2020-01-01 17:00:00+00:00")
         self.assertTrue(pd.isna(aware_arrow_out.iloc[1]))
 
-        # Zone ids pyarrow rejects but pandas accepts must still match the numpy branch.
+        # Zone ids pyarrow rejects must still match numpy.
         for tz in ("UTC+01:00", "+01:00:30"):
             arrow_out = _check_series_convert_timestamps_internal(arrow_ser, tz)
             numpy_out = _check_series_convert_timestamps_internal(numpy_ser, tz)
             self.assertEqual(str(arrow_out.iloc[0]), str(numpy_out.iloc[0]), f"Failed for {tz}")
 
-        # timezone=None uses the local timezone, like the numpy branch.
+        # timezone=None uses the local timezone, like numpy.
         self.assertEqual(
             str(_check_series_convert_timestamps_internal(arrow_ser, None).iloc[0]),
             str(_check_series_convert_timestamps_internal(numpy_ser, None).iloc[0]),
