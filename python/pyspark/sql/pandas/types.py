@@ -1366,6 +1366,31 @@ def _create_converter_to_pandas(
         return lambda pser: pser
 
 
+def _arrow_array_from_pandas(
+    series: "PandasSeriesLike",
+    arrow_type: Optional["pa.DataType"],
+    mask: Optional["PandasSeriesLike"],
+    safecheck: bool,
+) -> Union["pa.Array", "pa.ChunkedArray"]:
+    """
+    Convert a pandas Series to an Arrow array of the requested type.
+
+    pandas' ``ArrowExtensionArray.__arrow_array__`` ignores the requested type. pyarrow >= 19
+    casts the result to it, but pyarrow < 19 does not, so cast here the same way (SPARK-46776).
+    Remove this once the minimum supported pyarrow version is 19.
+    """
+    import pyarrow as pa
+
+    result = pa.Array.from_pandas(series, mask=mask, type=arrow_type, safe=safecheck)
+    if (
+        arrow_type is not None
+        and not result.type.equals(arrow_type)
+        and LooseVersion(pa.__version__) < LooseVersion("19.0.0")
+    ):
+        result = result.cast(arrow_type)
+    return result
+
+
 @functools.lru_cache(maxsize=64)
 def _create_converter_from_pandas(
     data_type: DataType,

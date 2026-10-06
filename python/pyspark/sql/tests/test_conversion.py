@@ -569,6 +569,70 @@ class PandasToArrowConversionTests(unittest.TestCase):
         self.assertIsInstance(result.column(0), pa.Array)
         self.assertEqual(result.column(0).to_pylist(), ["a", "b", "c", "d", "e"])
 
+    def test_from_pandas_arrow_dtype_requested_type(self):
+        """SPARK-46776: ArrowDtype input must come out as the requested Arrow type."""
+        import pandas as pd
+        import pyarrow as pa
+
+        from pyspark.sql.pandas.conversion import create_arrow_array_from_pandas
+
+        ts = datetime.datetime(2020, 1, 1, 12, 0)
+        cases = [
+            (pa.int32(), [1, 2, None], LongType(), pa.int64()),
+            (pa.large_string(), ["a", None], StringType(), pa.string()),
+            (pa.large_binary(), [b"a", None], BinaryType(), pa.binary()),
+            (pa.timestamp("ns"), [ts, None], TimestampType(), pa.timestamp("us", tz="UTC")),
+        ]
+        series_cases = [
+            (pd.Series(pa.array(values, type=t), dtype=pd.ArrowDtype(t)), values, spark_type, exp)
+            for t, values, spark_type, exp in cases
+        ]
+        series_cases.append(
+            (
+                pd.Series(["a", None], dtype="string[pyarrow]"),
+                ["a", None],
+                StringType(),
+                pa.string(),
+            )
+        )
+        for series, values, spark_type, expected in series_cases:
+            arrow_dtype = series.dtype
+            schema = StructType([StructField("_0", spark_type)])
+            batch = PandasToArrowConversion.from_pandas([series], schema, timezone="UTC")
+            arr = create_arrow_array_from_pandas(series, spark_type, timezone="UTC")
+            expected_values = pa.array(values, type=expected).to_pylist()
+            for out in (batch.column(0), arr):
+                self.assertEqual(out.type, expected, f"Failed for {arrow_dtype}")
+                self.assertEqual(out.to_pylist(), expected_values, f"Failed for {arrow_dtype}")
+
+    def test_from_pandas_arrow_dtype_nan_to_integer(self):
+        """NaN in an ArrowDtype float column must not be cast silently to an integer."""
+        import numpy as np
+        import pandas as pd
+        import pyarrow as pa
+
+        from pyspark.sql.pandas.conversion import create_arrow_array_from_pandas
+
+        series = pd.Series(pd.arrays.ArrowExtensionArray(pa.array([1.0, np.nan, None])))
+        schema = StructType([StructField("_0", LongType())])
+        with self.assertRaises(PySparkValueError):
+            create_arrow_array_from_pandas(series, LongType(), safecheck=False)
+        with self.assertRaises(PySparkValueError):
+            PandasToArrowConversion.from_pandas([series], schema, arrow_cast=False)
+
+    def test_from_pandas_masked_dtype_stays_strict(self):
+        """Only ArrowExtensionArray input is cast; masked dtypes keep strict conversion."""
+        import pandas as pd
+
+        from pyspark.sql.pandas.conversion import create_arrow_array_from_pandas
+
+        series = pd.Series([1, None], dtype="Int64")
+        schema = StructType([StructField("_0", StringType())])
+        with self.assertRaises(PySparkTypeError):
+            PandasToArrowConversion.from_pandas([series], schema, arrow_cast=False)
+        with self.assertRaises(PySparkTypeError):
+            create_arrow_array_from_pandas(series, StringType())
+
 
 @unittest.skipIf(not have_pyarrow, pyarrow_requirement_message)
 class ConversionTests(unittest.TestCase):
